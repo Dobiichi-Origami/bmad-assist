@@ -494,8 +494,8 @@ class GeminiProvider(BaseProvider):
                                             "ToolCallGuard triggered: %s",
                                             verdict.reason,
                                         )
-                                        if guard_kill_event is not None:
-                                            guard_kill_event.set()
+                                        if guard_kill_event is not None:  # noqa: B023
+                                            guard_kill_event.set()  # noqa: B023
                                         stream.close()
                                         return
                                 # Normalize tool name for restriction check
@@ -600,6 +600,7 @@ class GeminiProvider(BaseProvider):
                         build_termination_fields,
                         start_guard_monitor,
                     )
+                    assert guard_kill_event is not None and guard_done_event is not None
                     guard_monitor = start_guard_monitor(process, guard_kill_event, guard_done_event)
 
                 # Start reader threads

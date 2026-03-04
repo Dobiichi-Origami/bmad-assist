@@ -11,11 +11,13 @@ for platform compatibility (these modules don't exist on Windows).
 from __future__ import annotations
 
 import atexit
+import contextlib
 import logging
 import sys
 import threading
 import time
-from typing import IO, Callable
+from collections.abc import Callable
+from typing import IO
 
 logger = logging.getLogger("bmad_assist.tui.input")
 
@@ -35,7 +37,7 @@ class InputHandler:
     keyboard repeat rate analysis.
     """
 
-    def __init__(self) -> None:
+    def __init__(self) -> None:  # noqa: D107
         self._callbacks: dict[str, Callable[[], None]] = {}
         self._long_press_callbacks: dict[str, Callable[[], None]] = {}
         self._running: bool = False
@@ -58,6 +60,7 @@ class InputHandler:
         Args:
             key: Single ASCII character (case-sensitive).
             callback: Function to call when key is pressed.
+
         """
         self._callbacks[key] = callback
 
@@ -67,6 +70,7 @@ class InputHandler:
         Args:
             key: Single ASCII character (case-sensitive).
             callback: Function to call on long-press detection.
+
         """
         self._long_press_callbacks[key] = callback
 
@@ -143,10 +147,8 @@ class InputHandler:
 
         # Join thread with timeout (don't block forever — daemon will die anyway)
         if self._thread is not None:
-            try:
+            with contextlib.suppress(RuntimeError, OSError):
                 self._thread.join(timeout=0.2)
-            except (RuntimeError, OSError):
-                pass  # Thread may not have started or already dead
 
         self._restore_terminal()
 
@@ -172,8 +174,8 @@ class InputHandler:
         try:
             import termios
 
-            fd = self._stdin.fileno()
-            termios.tcsetattr(fd, termios.TCSAFLUSH, self._old_settings)
+            fd = self._stdin.fileno()  # type: ignore[union-attr]
+            termios.tcsetattr(fd, termios.TCSAFLUSH, self._old_settings)  # type: ignore[arg-type]
             self._restored = True
         except Exception:  # noqa: BLE001
             # termios.error, OSError, ValueError — all acceptable
@@ -196,7 +198,7 @@ class InputHandler:
             try:
                 readable, _, _ = select.select([self._stdin], [], [], 0.05)
                 if readable:
-                    ch = self._stdin.read(1)
+                    ch = self._stdin.read(1)  # type: ignore[union-attr]
                     if not ch:
                         # EOF: stdin closed (PTY disconnect, pipe end, etc.)
                         logger.debug("stdin EOF — input thread exiting")
@@ -219,6 +221,7 @@ class InputHandler:
 
         Args:
             ch: Single character read from stdin.
+
         """
         now = time.monotonic()
 

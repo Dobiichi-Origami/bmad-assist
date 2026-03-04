@@ -9,6 +9,7 @@ Does NOT use alternate screen buffer or cursor position queries.
 
 from __future__ import annotations
 
+import contextlib
 import shutil
 import signal
 import sys
@@ -39,9 +40,10 @@ class LayoutManager:
 
     Args:
         status_lines: Number of reserved bottom lines (default: 2).
+
     """
 
-    def __init__(self, status_lines: int = 2) -> None:
+    def __init__(self, status_lines: int = 2) -> None:  # noqa: D107
         self._status_lines = status_lines
         self._lock = threading.Lock()
         self._rows: int = 0
@@ -103,12 +105,10 @@ class LayoutManager:
 
         # Register SIGWINCH handler (Unix only, main thread only)
         if hasattr(signal, "SIGWINCH"):
-            try:
-                self._prev_sigwinch = signal.signal(
+            with contextlib.suppress(ValueError, OSError):
+                self._prev_sigwinch = signal.signal(  # type: ignore[assignment]
                     signal.SIGWINCH, self._on_sigwinch
                 )
-            except (ValueError, OSError):
-                pass  # Not main thread or signal not available
 
     def stop(self) -> None:
         """Restore terminal state.
@@ -141,10 +141,8 @@ class LayoutManager:
 
         # Restore previous SIGWINCH handler
         if self._prev_sigwinch is not None and hasattr(signal, "SIGWINCH"):
-            try:
+            with contextlib.suppress(ValueError, OSError):
                 signal.signal(signal.SIGWINCH, self._prev_sigwinch)
-            except (ValueError, OSError):
-                pass
 
     def write_log(self, text: str) -> None:
         """Write text to the scroll region.
@@ -158,6 +156,7 @@ class LayoutManager:
 
         Args:
             text: Log text to write (may contain newlines).
+
         """
         if not self._started:
             return
@@ -179,6 +178,7 @@ class LayoutManager:
 
         Args:
             text: Phase elapsed text to display.
+
         """
         if not self._started:
             return
@@ -204,6 +204,7 @@ class LayoutManager:
 
         Args:
             text: Status bar text to display.
+
         """
         if not self._started:
             return
@@ -329,6 +330,7 @@ class LayoutManager:
 
         Returns:
             Truncated text.
+
         """
         if len(text) <= width:
             return text
@@ -344,6 +346,7 @@ class LayoutManager:
 
         Args:
             data: String to write to stdout.
+
         """
         with self._lock:
             try:

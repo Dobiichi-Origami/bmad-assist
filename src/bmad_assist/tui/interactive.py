@@ -35,7 +35,7 @@ class InteractiveRenderer:
     implementations.
     """
 
-    def __init__(self) -> None:
+    def __init__(self) -> None:  # noqa: D107
         self._layout: LayoutManager | None = None
         self._log_level_toggle: LogLevelToggle | None = None
         self._status_bar: StatusBar | None = None
@@ -59,6 +59,7 @@ class InteractiveRenderer:
             status_bar: Optional StatusBar for phase/status display.
             input_handler: Optional InputHandler for keyboard input.
             pause_timer: Optional PauseTimer for pause countdown.
+
         """
         self._layout = layout
         self._log_level_toggle = log_toggle
@@ -127,6 +128,7 @@ class InteractiveRenderer:
             message: Log message text.
             logger_name: Logger name (accepted but not displayed).
             timestamp: When the log event occurred.
+
         """
         if self._log_level_toggle is None or self._layout is None:
             logger.debug("InteractiveRenderer.render_log: not implemented")
@@ -190,6 +192,7 @@ class InteractiveRenderer:
 
         Args:
             level: Log level name (DEBUG, INFO, WARNING).
+
         """
         if self._log_level_toggle is None:
             logger.debug("InteractiveRenderer.set_log_level: not implemented")

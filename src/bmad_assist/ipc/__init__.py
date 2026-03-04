@@ -18,13 +18,6 @@ from bmad_assist.ipc.cleanup import (
     set_active_socket,
     signal_safe_cleanup,
 )
-from bmad_assist.ipc.discovery import (
-    DiscoveredInstance,
-    DiscoveryService,
-    discover_instances,
-    discover_instances_async,
-    probe_instance,
-)
 from bmad_assist.ipc.client import (
     ConnectionState,
     IPCCommandError,
@@ -33,6 +26,20 @@ from bmad_assist.ipc.client import (
     IPCTimeoutError,
     SocketClient,
     SyncSocketClient,
+)
+from bmad_assist.ipc.commands import (
+    CommandHandlerImpl,
+)
+from bmad_assist.ipc.discovery import (
+    DiscoveredInstance,
+    DiscoveryService,
+    discover_instances,
+    discover_instances_async,
+    probe_instance,
+)
+from bmad_assist.ipc.events import (
+    EventEmitter,
+    IPCLogHandler,
 )
 from bmad_assist.ipc.protocol import (
     CONNECT_TIMEOUT,
@@ -60,6 +67,11 @@ from bmad_assist.ipc.protocol import (
     serialize,
     validate_socket_path_length,
     write_message,
+)
+from bmad_assist.ipc.server import (
+    CommandHandler,
+    IPCServerThread,
+    SocketServer,
 )
 from bmad_assist.ipc.types import (
     ErrorData,
@@ -93,18 +105,6 @@ from bmad_assist.ipc.types import (
     StopParams,
     StopResult,
     get_event_priority,
-)
-from bmad_assist.ipc.commands import (
-    CommandHandlerImpl,
-)
-from bmad_assist.ipc.events import (
-    EventEmitter,
-    IPCLogHandler,
-)
-from bmad_assist.ipc.server import (
-    CommandHandler,
-    IPCServerThread,
-    SocketServer,
 )
 
 __all__ = [

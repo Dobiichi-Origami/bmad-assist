@@ -38,9 +38,10 @@ class LogLevelToggle:
     Args:
         status_bar: StatusBar instance for display updates.
         layout: LayoutManager instance for log messages.
+
     """
 
-    def __init__(self, status_bar: StatusBar, layout: LayoutManager) -> None:
+    def __init__(self, status_bar: StatusBar, layout: LayoutManager) -> None:  # noqa: D107
         self._status_bar = status_bar
         self._layout = layout
         self._current_level: str = "WARNING"
@@ -55,6 +56,7 @@ class LogLevelToggle:
 
         Args:
             cb: Callback that receives the new level string (e.g., ``"DEBUG"``).
+
         """
         self._ipc_callback = cb
 
@@ -81,6 +83,7 @@ class LogLevelToggle:
 
         Args:
             level: Log level name (e.g., ``"DEBUG"``, ``"info"``).
+
         """
         normalized = level.upper()
         if normalized not in LOG_LEVEL_CYCLE:
@@ -144,7 +147,7 @@ if __name__ == "__main__":
     toggle = LogLevelToggle(sb, layout)
 
     # Wire mock IPC callback
-    def mock_ipc_callback(level: str) -> None:
+    def mock_ipc_callback(level: str) -> None:  # noqa: D103
         layout.write_log(f"[IPC callback] set_log_level({level})")
 
     toggle.set_ipc_callback(mock_ipc_callback)

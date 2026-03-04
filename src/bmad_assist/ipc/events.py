@@ -12,6 +12,7 @@ Three event distribution systems coexist independently:
 
 from __future__ import annotations
 
+import contextlib
 import logging
 import threading
 import time
@@ -52,7 +53,7 @@ class EventEmitter:
 
     """
 
-    def __init__(self, server: IPCServerThread | None) -> None:
+    def __init__(self, server: IPCServerThread | None) -> None:  # noqa: D107
         self._server = server
         self._prev_runner_state: RunnerState | None = None
         self._goodbye_sent: bool = False  # Suppress events after goodbye
@@ -377,7 +378,7 @@ class IPCLogHandler(logging.Handler):
 
     """
 
-    def __init__(self, emitter: EventEmitter, level: int = logging.WARNING) -> None:
+    def __init__(self, emitter: EventEmitter, level: int = logging.WARNING) -> None:  # noqa: D107
         super().__init__(level=level)
         self._emitter = emitter
 
@@ -388,11 +389,9 @@ class IPCLogHandler(logging.Handler):
             record: Python logging LogRecord.
 
         """
-        try:
+        with contextlib.suppress(Exception):
             self._emitter.emit_log(
                 level=record.levelname,
                 message=record.getMessage(),
                 logger_name=record.name,
             )
-        except Exception:
-            pass  # Handler MUST NOT raise

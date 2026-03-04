@@ -12,6 +12,7 @@ via fire-and-forget callbacks set externally.
 
 from __future__ import annotations
 
+import contextlib
 import logging
 import sys
 import threading
@@ -46,6 +47,7 @@ def format_countdown(seconds: int) -> str:
 
     Returns:
         Formatted countdown string.
+
     """
     total = max(0, seconds)
     hours = total // 3600
@@ -77,9 +79,10 @@ class PauseTimer:
     Args:
         status_bar: StatusBar instance for display updates.
         layout: LayoutManager instance for log messages.
+
     """
 
-    def __init__(self, status_bar: StatusBar, layout: LayoutManager) -> None:
+    def __init__(self, status_bar: StatusBar, layout: LayoutManager) -> None:  # noqa: D107
         self._status_bar = status_bar
         self._layout = layout
 
@@ -277,10 +280,8 @@ class PauseTimer:
         """
         self._running = False
         if self._timer_thread is not None:
-            try:
+            with contextlib.suppress(Exception):
                 self._timer_thread.join(timeout=0.5)
-            except Exception:
-                pass
         self._timer_thread = None
 
         # Clean up pause state if still active
@@ -353,10 +354,10 @@ if __name__ == "__main__":
     pt = PauseTimer(sb, layout)
 
     # Wire mock callbacks
-    def on_pause() -> None:
+    def on_pause() -> None:  # noqa: D103
         layout.write_log("[callback] pause.flag created")
 
-    def on_resume() -> None:
+    def on_resume() -> None:  # noqa: D103
         layout.write_log("[callback] pause.flag removed")
 
     pt.set_pause_callback(on_pause)

@@ -24,7 +24,7 @@ import time
 from collections.abc import Callable
 from datetime import UTC, datetime
 from pathlib import Path
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, Literal
 
 import yaml
 
@@ -312,9 +312,9 @@ def _start_ipc_server(
     # IPCError is a BmadAssistError subclass (not OSError), raised by
     # validate_socket_path_length() when socket path exceeds 107-byte sun_path limit.
     try:
-        from bmad_assist.ipc.protocol import IPCError as _IPCError
+        from bmad_assist.ipc.protocol import IPCError as _IPCError  # noqa: N813
     except ImportError:
-        _IPCError = OSError  # type: ignore[misc, assignment]  # Fallback if ipc not available
+        _IPCError = OSError  # type: ignore[misc, assignment]  # noqa: N806
 
     try:
         from bmad_assist.ipc.cleanup import (
@@ -1068,7 +1068,9 @@ def _run_loop_body(
                     phase_status = PhaseStatus.ERROR
 
                 phase_name = state.current_phase.name if state.current_phase else "UNKNOWN"
-                from bmad_assist.core.config.models.providers import MULTI_LLM_PHASES as _MULTI_PHASES
+                from bmad_assist.core.config.models.providers import (
+                    MULTI_LLM_PHASES as _MULTI_PHASES,
+                )
 
                 _pcount = (len(config.providers.multi) + 1) if phase_name.lower() in _MULTI_PHASES else 1
                 run_log.phases.append(
@@ -1786,6 +1788,7 @@ def _run_loop_body(
         # Must happen before stop_metrics/IDLE to ensure clients receive it
         try:
             _exc = sys.exc_info()[1]  # None if no active exception
+            _reason: Literal["normal", "stop_command", "error"]
             if cancel_ctx and cancel_ctx.is_cancelled:
                 _reason = "stop_command"
                 _message = None
@@ -1817,7 +1820,5 @@ def _run_loop_body(
                 logging.getLogger().removeHandler(ipc_log_handler)
         except Exception as e:
             logger.warning("Failed to remove IPC log handler: %s", e)
-        try:
+        with contextlib.suppress(Exception):
             emitter.update_state(RunnerState.IDLE, {})
-        except Exception:
-            pass  # Best-effort final state update

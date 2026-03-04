@@ -15,6 +15,7 @@ A daemon timer thread ticks every ~1 second to update the display.
 
 from __future__ import annotations
 
+import contextlib
 import logging
 import shutil
 import sys
@@ -70,6 +71,7 @@ def format_run_elapsed(seconds: float) -> str:
 
     Returns:
         Human-readable string, e.g. ``1d 12h 45m 23s``.
+
     """
     total = max(0, int(seconds))
     days = total // 86400
@@ -108,9 +110,10 @@ class StatusBar:
 
     Args:
         layout: LayoutManager instance for terminal I/O.
+
     """
 
-    def __init__(self, layout: LayoutManager) -> None:
+    def __init__(self, layout: LayoutManager) -> None:  # noqa: D107
         self._layout = layout
 
         # Data model fields (AC #3)
@@ -158,6 +161,7 @@ class StatusBar:
             story_id: Current story identifier (e.g. ``30.4``).
             elapsed: Seconds already elapsed for this phase (for reconnect
                 hydration). When 0, timer starts from now.
+
         """
         with self._lock:
             self._phase = phase
@@ -192,6 +196,7 @@ class StatusBar:
 
         Args:
             countdown: Formatted countdown string or None to clear.
+
         """
         with self._lock:
             self._pause_countdown = countdown
@@ -238,10 +243,8 @@ class StatusBar:
         """
         self._running = False
         if self._timer_thread is not None:
-            try:
+            with contextlib.suppress(Exception):
                 self._timer_thread.join(timeout=0.5)
-            except Exception:
-                pass
         self._timer_thread = None
 
     def _timer_loop(self) -> None:
@@ -342,6 +345,7 @@ class StatusBar:
 
         Returns:
             Formatted status bar string.
+
         """
         # If kwargs not provided, snapshot from data model
         if run_start is None or now is None:

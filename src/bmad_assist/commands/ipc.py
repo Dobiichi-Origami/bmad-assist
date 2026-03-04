@@ -12,7 +12,7 @@ from __future__ import annotations
 
 from datetime import UTC, datetime
 from pathlib import Path
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING
 
 import typer
 
@@ -450,7 +450,7 @@ def _connect_to_project(project: Path, timeout: float = 5.0) -> SyncSocketClient
         client.connect(timeout=timeout)
     except IPCConnectionError as e:
         _error(f"Cannot connect to runner: {e}")
-        raise typer.Exit(code=1)
+        raise typer.Exit(code=1) from None
 
     return client
 
@@ -471,7 +471,7 @@ def pause_command(
             _success("Runner paused")
     except IPCCommandError as e:
         _error(f"Pause failed: {e.message}")
-        raise typer.Exit(code=1)
+        raise typer.Exit(code=1) from None
     finally:
         client.disconnect()
     raise typer.Exit(code=EXIT_SUCCESS)
@@ -493,7 +493,7 @@ def resume_command(
             _success("Runner resumed")
     except IPCCommandError as e:
         _error(f"Resume failed: {e.message}")
-        raise typer.Exit(code=1)
+        raise typer.Exit(code=1) from None
     finally:
         client.disconnect()
     raise typer.Exit(code=EXIT_SUCCESS)
@@ -515,7 +515,7 @@ def stop_command(
             _success("Runner stopped")
     except IPCCommandError as e:
         _error(f"Stop failed: {e.message}")
-        raise typer.Exit(code=1)
+        raise typer.Exit(code=1) from None
     finally:
         client.disconnect()
     raise typer.Exit(code=EXIT_SUCCESS)
@@ -548,7 +548,7 @@ def log_level_command(
             _info(f"Log level was already {result.level}")
     except IPCCommandError as e:
         _error(f"Set log level failed: {e.message}")
-        raise typer.Exit(code=1)
+        raise typer.Exit(code=1) from None
     finally:
         client.disconnect()
     raise typer.Exit(code=EXIT_SUCCESS)
@@ -585,7 +585,7 @@ def reload_command(
                 console.print(f"  • {warn_msg}")
     except IPCCommandError as e:
         _error(f"Reload failed: {e.message}")
-        raise typer.Exit(code=1)
+        raise typer.Exit(code=1) from None
     finally:
         client.disconnect()
     raise typer.Exit(code=EXIT_SUCCESS)

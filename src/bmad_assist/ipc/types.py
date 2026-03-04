@@ -251,7 +251,7 @@ class GetStateResult(BaseModel):
     )
     llm_sessions: int = Field(default=0, description="Total LLM provider invocations so far")
     log_level: str | None = Field(default=None, description="Current runner log level")
-    session_details: list[dict] = Field(
+    session_details: list[dict[str, Any]] = Field(
         default_factory=list,
         description="Per-phase LLM session details: provider, model, phase, status, provider_count",
     )

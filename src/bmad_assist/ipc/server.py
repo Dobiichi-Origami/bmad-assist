@@ -13,6 +13,7 @@ from __future__ import annotations
 
 import asyncio
 import atexit
+import contextlib
 import itertools
 import logging
 import os
@@ -37,9 +38,9 @@ from bmad_assist.ipc.protocol import (
     deserialize,
     get_socket_dir,
     make_error_response,
-    validate_socket_path_length,
     make_event,
     read_message,
+    validate_socket_path_length,
     write_message,
 )
 from bmad_assist.ipc.types import (
@@ -112,7 +113,7 @@ class SocketServer:
 
     """
 
-    def __init__(
+    def __init__(  # noqa: D107
         self,
         socket_path: Path,
         project_root: Path,
@@ -236,7 +237,7 @@ class SocketServer:
             try:
                 writer.close()
                 await asyncio.wait_for(writer.wait_closed(), timeout=1.0)
-            except (asyncio.TimeoutError, OSError, ConnectionError):
+            except (TimeoutError, OSError, ConnectionError):
                 pass
         self._clients.clear()
         self._client_ids.clear()
@@ -330,10 +331,8 @@ class SocketServer:
         except OSError as e:
             logger.warning("Failed to write lock file: %s", e)
             # Clean up temp file
-            try:
+            with contextlib.suppress(OSError):
                 temp_path.unlink(missing_ok=True)
-            except OSError:
-                pass
 
     # -------------------------------------------------------------------------
     # Connection handling
@@ -394,7 +393,7 @@ class SocketServer:
                     )
                     last_activity = loop.time()
 
-                except asyncio.TimeoutError:
+                except TimeoutError:
                     # Idle timeout — close connection
                     elapsed = loop.time() - last_activity
                     logger.info(
@@ -525,7 +524,7 @@ class SocketServer:
                     data={"reason": "No command handler configured"},
                 )
             try:
-                return await self._handler(method, params, request_id)
+                return await self._handler(method, params, request_id)  # type: ignore[arg-type]
             except Exception as e:
                 return make_error_response(
                     request_id,
@@ -710,7 +709,7 @@ class SocketServer:
                     timeout=_BROADCAST_WRITE_TIMEOUT,
                 )
 
-            except asyncio.TimeoutError:
+            except TimeoutError:
                 logger.warning("Broadcast write timeout, marking client for removal")
                 disconnected.append(writer)
             except (ConnectionResetError, BrokenPipeError, OSError):
@@ -724,10 +723,8 @@ class SocketServer:
         for writer in disconnected:
             self._clients.discard(writer)
             self._client_ids.pop(writer, None)
-            try:
+            with contextlib.suppress(Exception):
                 writer.close()
-            except Exception:
-                pass
 
     def next_event_seq(self) -> int:
         """Get the next monotonically increasing event sequence number.
@@ -758,7 +755,7 @@ class IPCServerThread:
 
     """
 
-    def __init__(
+    def __init__(  # noqa: D107
         self,
         socket_path: Path,
         project_root: Path,
@@ -895,13 +892,10 @@ class IPCServerThread:
         if loop.is_closed():
             return
 
-        try:
+        with contextlib.suppress(RuntimeError):
             asyncio.run_coroutine_threadsafe(
                 self._server.broadcast(event), loop
             )
-        except RuntimeError:
-            # Loop closed between check and call
-            pass
 
     def update_state(
         self,

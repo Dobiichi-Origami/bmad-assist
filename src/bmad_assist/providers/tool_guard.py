@@ -147,7 +147,7 @@ class ToolCallGuard:
         """Whether the guard has been triggered (read-only)."""
         return self._terminated
 
-    def check(self, tool_name: str, tool_input: dict | None = None) -> GuardVerdict:
+    def check(self, tool_name: str, tool_input: dict[str, Any] | None = None) -> GuardVerdict:
         """Check a tool call against guard thresholds.
 
         Evaluates thresholds BEFORE incrementing counters. A denied call
@@ -166,7 +166,7 @@ class ToolCallGuard:
             return self._check_unlocked(tool_name, tool_input)
 
     def _check_unlocked(
-        self, tool_name: str, tool_input: dict | None
+        self, tool_name: str, tool_input: dict[str, Any] | None
     ) -> GuardVerdict:
         """Internal check implementation (must hold _lock)."""
         if self._terminated:
@@ -258,7 +258,7 @@ class ToolCallGuard:
         )
 
     def _extract_file_path(
-        self, tool_name: str, tool_input: dict | None
+        self, tool_name: str, tool_input: dict[str, Any] | None
     ) -> str | None:
         """Extract and normalize file path from tool input.
 
@@ -282,7 +282,7 @@ class ToolCallGuard:
         for key in _FILE_PATH_KEYS:
             raw_path = tool_input.get(key)
             if raw_path and isinstance(raw_path, str):
-                return os.path.realpath(raw_path)
+                return str(os.path.realpath(raw_path))
 
         return None
 
@@ -311,7 +311,7 @@ def build_termination_fields(
 
 
 def start_guard_monitor(
-    process: subprocess.Popen,
+    process: subprocess.Popen[Any],
     guard_kill_event: threading.Event,
     guard_done_event: threading.Event,
 ) -> threading.Thread:

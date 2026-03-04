@@ -16,6 +16,7 @@ The client supports:
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import inspect
 import itertools
 import logging
@@ -99,7 +100,7 @@ class IPCCommandError(IPCError):
 
     """
 
-    def __init__(self, code: int, message: str, data: dict[str, Any] | None = None) -> None:
+    def __init__(self, code: int, message: str, data: dict[str, Any] | None = None) -> None:  # noqa: D107
         self.code = code
         self.message = message
         self.data = data
@@ -162,7 +163,7 @@ class SocketClient:
 
     """
 
-    def __init__(
+    def __init__(  # noqa: D107
         self,
         socket_path: Path,
         client_id: str | None = None,
@@ -297,10 +298,8 @@ class SocketClient:
         # Cancel reader task
         if self._reader_task is not None and not self._reader_task.done():
             self._reader_task.cancel()
-            try:
+            with contextlib.suppress(asyncio.CancelledError):
                 await self._reader_task
-            except asyncio.CancelledError:
-                pass
             self._reader_task = None
 
         # Close writer
@@ -631,11 +630,11 @@ class SocketClient:
 
         try:
             result = await asyncio.wait_for(future, timeout=timeout)
-        except TimeoutError:
+        except TimeoutError as err:
             self._pending.pop(request_id, None)
             raise IPCTimeoutError(
                 f"Timeout waiting for response to '{method}' (id={request_id}, timeout={timeout}s)"
-            )
+            ) from err
 
         return result
 
@@ -660,10 +659,8 @@ class SocketClient:
             callback: Previously registered callback to remove.
 
         """
-        try:
+        with contextlib.suppress(ValueError):
             self._event_callbacks.remove(callback)
-        except ValueError:
-            pass
 
     def clear_subscriptions(self) -> None:
         """Clear all registered event callbacks.
@@ -776,7 +773,7 @@ class SyncSocketClient:
 
     """
 
-    def __init__(
+    def __init__(  # noqa: D107
         self,
         socket_path: Path,
         client_id: str | None = None,
@@ -850,7 +847,7 @@ class SyncSocketClient:
             raise IPCConnectionError("Client thread failed to start")
 
         if self._start_error is not None:
-            raise self._start_error  # type: ignore[misc]
+            raise self._start_error
 
         # Now connect the async client
         assert self._loop is not None
@@ -1066,7 +1063,7 @@ class SyncSocketClient:
             self._loop.run_forever()
 
         except Exception as exc:
-            self._start_error = exc  # type: ignore[assignment]
+            self._start_error = exc
             self._ready.set()
             logger.error("IPC client thread failed: %s", exc)
         finally:

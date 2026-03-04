@@ -13,6 +13,7 @@ Provides:
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import logging
 import os
 from pathlib import Path
@@ -115,15 +116,11 @@ def signal_safe_cleanup() -> None:
     lock_str = _active_lock_path_str
     if sock_str is None:
         return
-    try:
+    with contextlib.suppress(OSError):
         os.unlink(sock_str)
-    except OSError:
-        pass
     if lock_str is not None:
-        try:
+        with contextlib.suppress(OSError):
             os.unlink(lock_str)
-        except OSError:
-            pass
 
 
 # =============================================================================
@@ -187,7 +184,7 @@ async def _probe_socket(socket_path: Path) -> bool:
         finally:
             writer.close()
             await writer.wait_closed()
-    except (OSError, asyncio.TimeoutError, ConnectionError, ValueError):
+    except (TimeoutError, OSError, ConnectionError, ValueError):
         return False
 
 
@@ -209,7 +206,7 @@ def _run_probe_sync(socket_path: Path) -> bool:
     with concurrent.futures.ThreadPoolExecutor(max_workers=1) as ex:
         try:
             return ex.submit(asyncio.run, _probe_socket(socket_path)).result(timeout=3.0)
-        except (OSError, asyncio.TimeoutError, concurrent.futures.TimeoutError, RuntimeError):
+        except (TimeoutError, OSError, concurrent.futures.TimeoutError, RuntimeError):
             return False
 
 
@@ -248,10 +245,9 @@ def is_socket_stale(socket_path: Path, probe: bool = False) -> bool:
         return True
 
     # PID is alive — socket is likely active
-    if probe:
+    if probe and not _run_probe_sync(socket_path):
         # Attempt connect+ping to verify (handles PID reuse edge case)
-        if not _run_probe_sync(socket_path):
-            return True
+        return True
 
     return False
 
@@ -388,14 +384,13 @@ def cleanup_orphaned_sockets(force: bool = False) -> list[Path]:
                 if pid is None or not _is_pid_alive(pid):
                     continue
                 # PID alive — probe to verify
-                if not _run_probe_sync(sock_file):
-                    if cleanup_socket(sock_file):
-                        logger.warning(
-                            "Removed orphaned socket %s (PID=%s, reason=connect_failed)",
-                            sock_file.name,
-                            pid,
-                        )
-                        cleaned.append(sock_file)
+                if not _run_probe_sync(sock_file) and cleanup_socket(sock_file):
+                    logger.warning(
+                        "Removed orphaned socket %s (PID=%s, reason=connect_failed)",
+                        sock_file.name,
+                        pid,
+                    )
+                    cleaned.append(sock_file)
 
     return cleaned
 

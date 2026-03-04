@@ -483,8 +483,8 @@ class OpenCodeProvider(BaseProvider):
                                             "ToolCallGuard triggered: %s",
                                             verdict.reason,
                                         )
-                                        if guard_kill_event is not None:
-                                            guard_kill_event.set()
+                                        if guard_kill_event is not None:  # noqa: B023
+                                            guard_kill_event.set()  # noqa: B023
                                         stream.close()
                                         return
                                 # Log warning if restricted tools are attempted (once per tool)
@@ -550,6 +550,7 @@ class OpenCodeProvider(BaseProvider):
                 guard_monitor = None
                 if guard is not None:
                     from bmad_assist.providers.tool_guard import start_guard_monitor
+                    assert guard_kill_event is not None and guard_done_event is not None
                     guard_monitor = start_guard_monitor(process, guard_kill_event, guard_done_event)
 
                 # Start reader threads

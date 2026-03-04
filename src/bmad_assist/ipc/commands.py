@@ -55,7 +55,7 @@ class CommandHandlerImpl:
     CancellationContext, config reload, log level control).
     """
 
-    def __init__(
+    def __init__(  # noqa: D107
         self,
         project_root: Path,
         cancel_ctx: CancellationContext | None = None,

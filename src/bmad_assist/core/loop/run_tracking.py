@@ -19,6 +19,7 @@ import uuid
 from datetime import UTC, datetime
 from enum import Enum
 from pathlib import Path
+from typing import Any
 
 import yaml
 from pydantic import BaseModel, Field
@@ -65,7 +66,7 @@ class PhaseEvent(BaseModel):
     duration_ms: int | None = None
     status: PhaseStatus | None = None  # success/error/timeout
     error_type: str | None = None
-    termination_metadata: dict | None = None  # opaque termination data (guard stats, etc.)
+    termination_metadata: dict[str, Any] | None = None  # opaque termination data (guard stats, etc.)
 
 
 class PhaseInvocation(BaseModel):

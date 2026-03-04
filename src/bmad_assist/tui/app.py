@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import argparse
 import asyncio
+import contextlib
 import logging
 import shutil
 import sys
@@ -22,7 +23,7 @@ logger = logging.getLogger(__name__)
 class TUIApp:
     """Async TUI application connecting to a bmad-assist runner via IPC."""
 
-    def __init__(
+    def __init__(  # noqa: D107
         self,
         socket_path: Path | None = None,
         project: str | None = None,
@@ -123,11 +124,11 @@ class TUIApp:
                 loop = self._loop
 
                 def _make_callbacks() -> None:
-                    _client = client
+                    _client = client  # noqa: B023
                     _layout = layout
                     _pause_timer = pause_timer
                     _log_toggle = log_toggle
-                    _loop = loop
+                    _loop = loop  # noqa: B023
 
                     def _on_resume() -> None:
                         _pause_timer.deactivate()
@@ -147,7 +148,7 @@ class TUIApp:
                     def _on_log_level() -> None:
                         _log_toggle.on_log_level_key()
                         new_level = _log_toggle.get_level()
-                        asyncio.run_coroutine_threadsafe(_client.set_log_level(new_level), _loop)
+                        asyncio.run_coroutine_threadsafe(_client.set_log_level(new_level), _loop)  # type: ignore[arg-type]
 
                     input_handler.register("r", _on_resume)
                     input_handler.register("s", _on_stop)
@@ -158,10 +159,10 @@ class TUIApp:
                 input_handler.register_long_press("p", pause_timer.on_long_press_p)
 
                 pause_timer.set_pause_callback(
-                    lambda: asyncio.run_coroutine_threadsafe(client.pause(), loop)
+                    lambda: asyncio.run_coroutine_threadsafe(client.pause(), loop)  # type: ignore[arg-type]  # noqa: B023
                 )
                 pause_timer.set_resume_callback(
-                    lambda: asyncio.run_coroutine_threadsafe(client.resume(), loop)
+                    lambda: asyncio.run_coroutine_threadsafe(client.resume(), loop)  # type: ignore[arg-type]  # noqa: B023
                 )
 
                 # 5e. Connect, hydrate, subscribe, wait
@@ -192,14 +193,10 @@ class TUIApp:
                     logger.warning("Connection failed: %s", exc, exc_info=True)
                     layout.write_log(f"Connection failed: {type(exc).__name__}: {exc}")
                 finally:
-                    try:
+                    with contextlib.suppress(Exception):
                         event_bridge.stop()
-                    except Exception:
-                        pass
-                    try:
+                    with contextlib.suppress(Exception):
                         await client.disconnect()
-                    except Exception:
-                        pass
                     self._client = None
                     self._event_bridge = None
 
@@ -211,15 +208,13 @@ class TUIApp:
             logger.error("TUI error: %s", exc)
             return 1
         finally:
-            try:
+            with contextlib.suppress(Exception):
                 renderer.stop()
-            except Exception:
-                pass
 
     async def _discover_with_polling(self, layout: Any) -> Path | None:
         """Poll for runner instances until one is found or quit is pressed."""
         first_attempt = True
-        while not self._shutdown_event.is_set():
+        while self._shutdown_event is not None and not self._shutdown_event.is_set():
             socket_path = await self._resolve_socket(quiet=not first_attempt)
             if socket_path is not None:
                 return socket_path
@@ -236,7 +231,7 @@ class TUIApp:
                 )
                 # shutdown_event was set
                 return None
-            except asyncio.TimeoutError:
+            except TimeoutError:
                 continue
         return None
 
@@ -283,7 +278,7 @@ class TUIApp:
             logger.debug("Multiple runners: %s (quiet mode)", ", ".join(names))
         return None
 
-    def _apply_state(self, state: Any, status_bar: Any, renderer: InteractiveRenderer) -> None:
+    def _apply_state(self, state: Any, status_bar: Any, renderer: Any) -> None:
         """Apply hydrated state to TUI components."""
         from bmad_assist.ipc.types import RunnerState
 

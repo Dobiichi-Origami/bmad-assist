@@ -16,18 +16,20 @@ from __future__ import annotations
 
 import asyncio
 import concurrent.futures
+import contextlib
 import dataclasses
 import logging
 import threading
+from collections.abc import Callable
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from pathlib import Path
-from typing import Any, Callable
+from typing import Any
 
 from bmad_assist.ipc.cleanup import is_socket_stale, read_socket_pid
 from bmad_assist.ipc.protocol import (
-    IPCError,
     SOCKET_DIR,
+    IPCError,
     deserialize,
     read_message,
     write_message,
@@ -93,7 +95,7 @@ async def probe_instance(
         )
     except asyncio.CancelledError:
         raise
-    except (OSError, asyncio.TimeoutError, ConnectionError):
+    except (TimeoutError, OSError, ConnectionError):
         return None
 
     try:
@@ -123,15 +125,15 @@ async def probe_instance(
             await write_message(writer, state_request)
             raw = await asyncio.wait_for(read_message(reader), timeout=timeout)
             state_response = deserialize(raw)
-            return state_response.get("result", {})
+            return dict(state_response.get("result", {}))
         except asyncio.CancelledError:
             raise
-        except (OSError, asyncio.TimeoutError, ConnectionError, ValueError, IPCError):
+        except (TimeoutError, OSError, ConnectionError, ValueError, IPCError):
             return {}  # Ping succeeded but get_state failed → AC #2
 
     except asyncio.CancelledError:
         raise
-    except (OSError, asyncio.TimeoutError, ConnectionError, ValueError, IPCError):
+    except (TimeoutError, OSError, ConnectionError, ValueError, IPCError):
         return None
     finally:
         try:
@@ -193,7 +195,7 @@ async def discover_instances_async(
     instances: list[DiscoveredInstance] = []
     scan_time = datetime.now(UTC)
 
-    for (sock_path, project_hash, pid), result in zip(candidates, results):
+    for (sock_path, project_hash, pid), result in zip(candidates, results, strict=False):
         if isinstance(result, BaseException):
             # Probe raised an exception — skip this socket
             logger.debug(
@@ -253,7 +255,7 @@ class DiscoveryService:
 
     """
 
-    def __init__(
+    def __init__(  # noqa: D107
         self,
         poll_interval: float = 5.0,
         probe_timeout: float = 2.0,
@@ -406,13 +408,11 @@ class DiscoveryService:
         while not self._stop_event.is_set():
             await self._do_scan()
             # Wait for poll_interval OR early wakeup from refresh/stop
-            try:
+            with contextlib.suppress(TimeoutError):
                 await asyncio.wait_for(
                     self._wait_for_wakeup(),
                     timeout=self._poll_interval,
                 )
-            except asyncio.TimeoutError:
-                pass  # Normal timeout — next scan cycle
 
     async def _wait_for_wakeup(self) -> None:
         """Wait until either stop or refresh event is set."""
@@ -428,10 +428,8 @@ class DiscoveryService:
             )
             for task in pending:
                 task.cancel()
-                try:
+                with contextlib.suppress(asyncio.CancelledError):
                     await task
-                except asyncio.CancelledError:
-                    pass
         finally:
             # Clear refresh event for next cycle (don't clear stop)
             self._refresh_event.clear()
@@ -492,11 +490,11 @@ class DiscoveryService:
 
         # Fire callbacks (fire-and-forget, never crash polling thread)
         for path in added_paths:
-            inst = updated_map.get(path)
-            if inst is not None:
+            added_inst = updated_map.get(path)
+            if added_inst is not None:
                 for callback in self._added_callbacks:
                     try:
-                        callback(inst)
+                        callback(added_inst)
                     except Exception:
                         logger.warning(
                             "on_added callback error for %s",
@@ -505,9 +503,9 @@ class DiscoveryService:
                         )
 
         for path in removed_paths:
-            for callback in self._removed_callbacks:
+            for rm_callback in self._removed_callbacks:
                 try:
-                    callback(path)
+                    rm_callback(path)
                 except Exception:
                     logger.warning(
                         "on_removed callback error for %s",
