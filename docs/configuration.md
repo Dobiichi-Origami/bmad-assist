@@ -376,7 +376,7 @@ Variables are resolved at runtime from the environment or `.env` file.
 
 ## See Also
 
-- [TEA Configuration](tea-configuration.md) - Test Engineer Architect module settings
+- [TEA Configuration](tea-configuration.md) - Test Engineering Architect module settings
 - [Providers Reference](providers.md) - Detailed provider configuration
 - [Strategic Context](strategic-context.md) - Document injection settings
 - [Workflow Patches](workflow-patches.md) - Customize workflow prompts

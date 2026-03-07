@@ -1,6 +1,6 @@
 # TEA Configuration Guide
 
-TEA (Test Engineer Architect) is bmad-assist's test automation module. This guide explains the configuration switches and how `auto` mode works.
+[TEA (Test Engineering Architect)](https://github.com/bmad-code-org/bmad-method-test-architecture-enterprise) is bmad-assist's test automation module. This guide explains the configuration switches and how `auto` mode works.
 
 ## Configuration Hierarchy
 

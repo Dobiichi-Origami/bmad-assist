@@ -27,7 +27,7 @@ One LLM (Master) writes all code. The others only validate and review - they nev
 
 - **Multi-LLM Orchestration** - Claude Code, Gemini CLI, Codex, OpenCode, Amp, Cursor Agent, GitHub Copilot, Kimi CLI working in parallel
 - **A/B Testing** - Compare workflow configs, prompts, or model fleets side-by-side with git worktree isolation and LLM-powered analysis reports
-- **TEA Enterprise** - Test Architect with 8 workflows: framework setup, CI scaffolding, test design, ATDD, automation, NFR assessment, traceability, test review
+- **[TEA (Test Engineering Architect)](https://github.com/bmad-code-org/bmad-method-test-architecture-enterprise)** - 8 integrated workflows: framework setup, CI scaffolding, test design, ATDD, automation, NFR assessment, traceability, test review
 - **Bundled Workflows** - BMAD workflows included and ready to use out of the box
 - **Git Auto-commit** - Automatic commits after create-story, dev-story, and code-review-synthesis phases (`-g` flag)
 - **Deep Verify** *(WIP)* - Multi-method artifact verification (pattern matching, boundary analysis, cross-reference checks)
@@ -142,7 +142,7 @@ timeouts:
 
 - [Configuration Reference](docs/configuration.md) - Providers, timeouts, paths, compiler settings
 - [Providers Guide](docs/providers.md) - Setting up Claude Code, Gemini CLI, Codex, and other LLM tools
-- [TEA Configuration](docs/tea-configuration.md) - Test Architect Enterprise switch hierarchy and modes
+- [TEA Configuration](docs/tea-configuration.md) - [TEA (Test Engineering Architect)](https://github.com/bmad-code-org/bmad-method-test-architecture-enterprise) switch hierarchy and modes
 - [A/B Testing](docs/ab-testing.md) - Running controlled experiments comparing workflow configurations
 - [Strategic Context](docs/strategic-context.md) - Smart document loading optimization
 - [Sprint Management](docs/sprint-management.md) - Sprint status tracking and story lifecycle

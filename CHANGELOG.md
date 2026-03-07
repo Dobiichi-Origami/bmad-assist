@@ -2,6 +2,19 @@
 
 All notable changes to bmad-assist are documented in this file.
 
+## [0.4.34] - 2026-03-07
+
+### Added
+- **Dismissed Findings as Antipatterns** - Synthesis "Issues Dismissed" section is now parsed and fed back as `severity=dismissed` antipatterns with `FALSE POSITIVE: <reason>`, flowing automatically into future code review context. Idea credit: [PR #39](https://github.com/Pawel-N-pl/bmad-assist/pull/39) by [@derron1](https://github.com/derron1)
+- **TEA Config Completeness** - All TEA workflow mode switches (`framework_mode`, `ci_mode`, `test_design_mode`, `automate_mode`, `nfr_assess_mode`, `trace_on_epic_complete`, `test_review_on_code_complete`, `test_dir`) now documented in `bmad-assist.yaml.example` with commented optional sections (eligibility, preflight, playwright, evidence, knowledge)
+
+### Fixed
+- **Claude SDK `bypassPermissions`** - Use `bypassPermissions` flag for full tool access in automated workflows, preventing permission prompts that hang headless runs. Based on [PR #38](https://github.com/Pawel-N-pl/bmad-assist/pull/38) by [@derron1](https://github.com/derron1)
+- **Security Agent Default** - `SecurityAgentConfig.enabled` changed from `true` to `false` (opt-in) — was silently invoking real providers in test runs
+
+### Developer Experience
+- **Parallel Test Execution** - Added `pytest-xdist` for parallel test runs (`-n auto`): ~50s vs ~170s sequential. Fixed 3 xdist-incompatible tests (IPC socket path length, Rich terminal wrapping)
+
 ## [0.4.33] - 2026-03-05
 
 ### Added

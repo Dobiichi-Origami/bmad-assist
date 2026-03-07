@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "bmad-assist"
-version = "0.4.33"
+version = "0.4.34"
 description = "CLI tool for automating BMAD methodology development loop"
 readme = "README.md"
 license = {text = "MIT"}
@@ -34,6 +34,7 @@ dev = [
     "pytest-cov>=4.0.0",
     "pytest-asyncio>=0.24.0",
     "pytest-httpx>=0.30.0",
+    "pytest-xdist>=3.5.0",
     "mypy>=1.0.0",
     "ruff>=0.1.0",
     "types-PyYAML>=6.0.0",

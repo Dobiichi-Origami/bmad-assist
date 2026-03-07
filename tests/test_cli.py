@@ -651,7 +651,9 @@ class TestErrorMessages:
         """Error message includes the path that wasn't found."""
         nonexistent = tmp_path / "my-project"
         result = runner.invoke(app, ["run", "--project", str(nonexistent)])
-        assert "my-project" in result.output
+        # Normalize Rich terminal wrapping (inserts \n in long paths)
+        normalized = result.output.replace("\n", "")
+        assert "my-project" in normalized
 
     def test_file_not_directory_message_is_clear(self, tmp_path: Path) -> None:
         """Error message clearly states path must be directory."""

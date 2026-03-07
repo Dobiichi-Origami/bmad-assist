@@ -242,31 +242,76 @@ benchmarking:
 # Loop configuration - full TEA Enterprise integration
 loop:
   epic_setup:
-    # - tea_framework           # Initialize Playwright/Cypress (once per epic)
-    # - tea_ci                  # Scaffold CI pipeline
-    # - tea_test_design         # Generate system/epic test design
+    - tea_framework           # Initialize Playwright/Cypress (once per epic)
+    - tea_ci                  # Scaffold CI pipeline
+    - tea_test_design         # Generate system/epic test design
   story:
     - create_story
     - validate_story
     - validate_story_synthesis
-    # - atdd                    # Generate ATDD checklist before implementation
+    - atdd                    # Generate ATDD checklist before implementation
     - dev_story
     - code_review
     - code_review_synthesis
-    # - test_review             # Review test quality after code review
+    - test_review             # Review test quality after code review
   epic_teardown:
-    # - trace                   # Generate traceability matrix
-    # - tea_nfr_assess          # NFR assessment before release
+    - trace                   # Generate traceability matrix
+    - tea_nfr_assess          # NFR assessment before release
     - retrospective
     # - qa_plan_generate        # Generate E2E test plan
     # - qa_plan_execute         # Execute E2E tests
     # - qa_remediate            # Collect issues, auto-fix or escalate
 
-# TEA (Test Architect Enterprise) configuration
+# TEA (Test Engineering Architect) configuration
 testarch:
-  enabled: false                  # Set to true to enable TEA functionality
+  enabled: true                  # Set to true to enable TEA functionality
   engagement_model: auto          # off | lite | solo | integrated | auto
   atdd_mode: auto                 # off | auto | on
+  framework_mode: auto            # off | auto | on - controls tea_framework phase
+  ci_mode: auto                   # off | auto | on - controls tea_ci phase
+  test_design_mode: auto          # off | auto | on - controls tea_test_design phase
+  test_design_level: auto         # auto | system | epic
+  automate_mode: off              # off | auto | on - TEA Lite (standalone test generation)
+  nfr_assess_mode: off            # off | auto | on - release quality gates
+  trace_on_epic_complete: auto    # off | auto | on
+  test_review_on_code_complete: auto  # off | auto | on
+  test_dir: tests/                # test directory location
+
+  # ATDD eligibility scoring (for atdd_mode: auto)
+  # eligibility:
+  #   keyword_weight: 0.5         # Weight for keyword detection (must sum to 1.0 with llm_weight)
+  #   llm_weight: 0.5             # Weight for LLM assessment
+  #   threshold: 0.5              # Score threshold to enable ATDD
+
+  # Preflight infrastructure checks
+  # preflight:
+  #   test_design: true           # Check/init test-design-system.md
+  #   framework: true             # Check/init Playwright/Cypress config
+  #   ci: true                    # Check/init CI pipeline
+
+  # Playwright browser testing (optional)
+  # playwright:
+  #   browsers: [chromium]        # chromium | firefox | webkit
+  #   headless: true
+  #   timeout: 30000              # ms
+  #   workers: 1
+
+  # Evidence collection (optional)
+  # evidence:
+  #   enabled: true
+  #   collect_before_step: true
+  #   coverage:
+  #     patterns: ["coverage/lcov.info", "**/coverage-summary.json"]
+  #   security:
+  #     command: "npm audit --json"
+  #     timeout: 60
+
+  # Knowledge base loading (optional)
+  # knowledge:
+  #   playwright_utils: true
+  #   mcp_enhancements: true
+  #   default_fragments:
+  #     atdd: ["fixture-architecture", "network-first"]
 
   # TEA Context Loader - injects TEA artifacts into workflow prompts
   context:

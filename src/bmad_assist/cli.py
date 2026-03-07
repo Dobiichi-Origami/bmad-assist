@@ -334,7 +334,7 @@ def run(
     tea: bool = typer.Option(
         False,
         "--tea",
-        help="Enable full TEA (Test Architect Enterprise) loop with all phases",
+        help="Enable full TEA (Test Engineering Architect) loop with all phases",
     ),
     no_ipc: bool = typer.Option(
         False,
@@ -402,7 +402,7 @@ def run(
         console.print("[dim]Run logs: CSV export enabled[/dim]")
     if tea:
         os.environ["BMAD_TEA_LOOP"] = "1"
-        console.print("[dim]TEA: Full Test Architect Enterprise loop enabled[/dim]")
+        console.print("[dim]TEA: Full Test Engineering Architect loop enabled[/dim]")
 
     try:
         # Validate project path

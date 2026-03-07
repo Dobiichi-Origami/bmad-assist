@@ -265,7 +265,7 @@ class TestDiscoverWithLiveServer:
             "bmad_assist.ipc.server.get_socket_dir", lambda: sock_dir
         )
 
-        sock_path = sock_dir / "testhash1234567890abcdef12345678.sock"
+        sock_path = sock_dir / "testhash.sock"
         server = SocketServer(socket_path=sock_path, project_root=tmp_path)
         server.update_runner_state(
             state=RunnerState.RUNNING,

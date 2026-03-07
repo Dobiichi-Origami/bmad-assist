@@ -466,10 +466,12 @@ class TestStatusProjectIdentity:
             )
 
         assert result.exit_code == 0
-        assert "Project" in result.output
-        assert "my-project" in result.output
-        assert "Path" in result.output
-        assert str(project) in result.output
+        # Normalize Rich terminal wrapping (inserts \n in long paths)
+        normalized = result.output.replace("\n", "")
+        assert "Project" in normalized
+        assert "my-project" in normalized
+        assert "Path" in normalized
+        assert str(project) in normalized
 
     def test_status_project_no_project_fields_graceful(
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
