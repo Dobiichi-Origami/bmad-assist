@@ -309,6 +309,12 @@ def run(
         "-s",
         help="Start from specified story (e.g., '3' for story 22-3). Requires --epic.",
     ),
+    stop_after_epic: str | None = typer.Option(
+        None,
+        "--stop-after-epic",
+        "-E",
+        help="Stop after specified epic completes (e.g., '5'). Combine with -e for range.",
+    ),
     force: bool = typer.Option(
         False,
         "--force",
@@ -413,7 +419,6 @@ def run(
         # This MUST happen before sprint-status.yaml and state.yaml are read,
         # otherwise we read stale data from the wrong branch
         if git_commit and epic:
-            from bmad_assist.core.types import parse_epic_id
             from bmad_assist.git.branch import ensure_epic_branch, is_git_enabled
 
             epic_id = parse_epic_id(epic.strip())
@@ -562,6 +567,19 @@ def run(
             _error("--story requires --epic")
             raise typer.Exit(code=EXIT_CONFIG_ERROR)
 
+        # Validate --stop-after-epic
+        stop_epic_id: EpicId | None = None
+        if stop_after_epic is not None:
+            stop_epic_id = parse_epic_id(stop_after_epic.strip())
+            # If both --epic and --stop-after-epic, validate ordering
+            if epic is not None:
+                start_epic_id = parse_epic_id(epic.strip())
+                if epic_sort_key(stop_epic_id) < epic_sort_key(start_epic_id):
+                    _error(
+                        f"--stop-after-epic ({stop_after_epic}) must be >= --epic ({epic})"
+                    )
+                    raise typer.Exit(code=EXIT_CONFIG_ERROR)
+
         # Validate --phase
         if phase_override and not epic:
             _error("--phase requires --epic")
@@ -631,6 +649,23 @@ def run(
             _handle_debug_vars(loaded_config, project_path)
             raise typer.Exit(code=EXIT_SUCCESS)
 
+        # Truncate epic_list if --stop-after-epic is set
+        if stop_epic_id is not None:
+            stop_key = epic_sort_key(stop_epic_id)
+            truncated: list[EpicId] = []
+            for eid in epic_list:
+                if epic_sort_key(eid) <= stop_key:
+                    truncated.append(eid)
+            epic_list = truncated
+
+            if not epic_list:
+                _success("All epics in range already completed")
+                raise typer.Exit(code=EXIT_SUCCESS)
+
+            console.print(
+                f"[dim]Stop after epic: will stop after epic {stop_epic_id}[/dim]"
+            )
+
         # Delegate to main loop
         exit_reason = run_loop(
             loaded_config,
@@ -654,7 +689,10 @@ def run(
 
         # COMPLETED exit reason - show success message
         # Final success message always shown (AC11 - quiet mode shows final result)
-        _success("Completed successfully")
+        if stop_epic_id is not None:
+            _success(f"Range complete (stopped after epic {stop_epic_id})")
+        else:
+            _success("Completed successfully")
 
         # Exit with code 2 if workflows were skipped (CI warning)
         if setup_result.has_skipped:

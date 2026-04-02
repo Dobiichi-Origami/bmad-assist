@@ -1163,3 +1163,306 @@ class TestApplyStartPointOverride:
             )
 
         assert exc_info.value.exit_code == EXIT_CONFIG_ERROR
+
+
+# =============================================================================
+# Test: --stop-after-epic Flag
+# =============================================================================
+
+
+class TestStopAfterEpicFlag:
+    """Tests for --stop-after-epic / -E flag for range development."""
+
+    def _make_project(self, tmp_path: Path) -> tuple[Path, Path]:
+        """Create minimal project dir + config for stop-after-epic tests."""
+        project_dir = tmp_path / "project"
+        project_dir.mkdir()
+        sprint_dir = project_dir / "_bmad-output" / "implementation-artifacts"
+        sprint_dir.mkdir(parents=True)
+        (sprint_dir / "sprint-status.yaml").write_text("epics: []\n")
+
+        config_file = tmp_path / "config.yaml"
+        config_file.write_text(
+            """
+providers:
+  master:
+    provider: claude
+    model: opus_4
+"""
+        )
+        return project_dir, config_file
+
+    def test_stop_after_epic_flag_accepted(self) -> None:
+        """-E flag is parsed without error."""
+        result = runner.invoke(app, ["run", "-E", "3", "--help"])
+        assert result.exit_code == 0
+
+    def test_stop_after_epic_long_form_accepted(self) -> None:
+        """--stop-after-epic is parsed without error."""
+        result = runner.invoke(app, ["run", "--stop-after-epic", "3", "--help"])
+        assert result.exit_code == 0
+
+    def test_stop_after_epic_truncates_list(self, tmp_path: Path) -> None:
+        """epic_list=[1,2,3,4,5], -E 3 → run_loop gets [1,2,3]."""
+        project_dir, config_file = self._make_project(tmp_path)
+
+        with (
+            patch("bmad_assist.cli.run_loop") as mock_run_loop,
+            patch(
+                "bmad_assist.cli._load_epic_data",
+                return_value=(
+                    [1, 2, 3, 4, 5],
+                    {i: [f"{i}.1"] for i in range(1, 6)},
+                ),
+            ),
+        ):
+            result = runner.invoke(
+                app,
+                [
+                    "run",
+                    "--project", str(project_dir),
+                    "--config", str(config_file),
+                    "-E", "3",
+                ],
+            )
+
+        assert result.exit_code == EXIT_SUCCESS
+        mock_run_loop.assert_called_once()
+        passed_epic_list = mock_run_loop.call_args[0][2]
+        assert passed_epic_list == [1, 2, 3]
+
+    def test_stop_after_epic_range_with_start(self, tmp_path: Path) -> None:
+        """-e 2 -E 4 → run_loop gets epics up to 4 (start point set via state)."""
+        project_dir, config_file = self._make_project(tmp_path)
+
+        with (
+            patch("bmad_assist.cli.run_loop") as mock_run_loop,
+            patch(
+                "bmad_assist.cli._load_epic_data",
+                return_value=(
+                    [1, 2, 3, 4, 5],
+                    {i: [f"{i}.1"] for i in range(1, 6)},
+                ),
+            ),
+            patch("bmad_assist.cli.apply_start_point_override"),
+        ):
+            result = runner.invoke(
+                app,
+                [
+                    "run",
+                    "--project", str(project_dir),
+                    "--config", str(config_file),
+                    "-e", "2",
+                    "-E", "4",
+                ],
+            )
+
+        assert result.exit_code == EXIT_SUCCESS
+        mock_run_loop.assert_called_once()
+        passed_epic_list = mock_run_loop.call_args[0][2]
+        # -E truncates list to epics <= 4; -e sets start position via state (not list filtering)
+        assert passed_epic_list == [1, 2, 3, 4]
+
+    def test_stop_before_start_errors(self, tmp_path: Path) -> None:
+        """-e 5 -E 3 → EXIT_CONFIG_ERROR."""
+        project_dir, config_file = self._make_project(tmp_path)
+
+        with (
+            patch("bmad_assist.cli.run_loop"),
+            patch(
+                "bmad_assist.cli._load_epic_data",
+                return_value=(
+                    [1, 2, 3, 4, 5],
+                    {i: [f"{i}.1"] for i in range(1, 6)},
+                ),
+            ),
+        ):
+            result = runner.invoke(
+                app,
+                [
+                    "run",
+                    "--project", str(project_dir),
+                    "--config", str(config_file),
+                    "-e", "5",
+                    "-E", "3",
+                ],
+            )
+
+        assert result.exit_code == EXIT_CONFIG_ERROR
+        assert "must be >=" in result.output.lower()
+
+    def test_stop_equals_start_single_epic(self, tmp_path: Path) -> None:
+        """-e 3 -E 3 → list truncated to epics <= 3, start set via state."""
+        project_dir, config_file = self._make_project(tmp_path)
+
+        with (
+            patch("bmad_assist.cli.run_loop") as mock_run_loop,
+            patch(
+                "bmad_assist.cli._load_epic_data",
+                return_value=(
+                    [1, 2, 3, 4, 5],
+                    {i: [f"{i}.1"] for i in range(1, 6)},
+                ),
+            ),
+            patch("bmad_assist.cli.apply_start_point_override"),
+        ):
+            result = runner.invoke(
+                app,
+                [
+                    "run",
+                    "--project", str(project_dir),
+                    "--config", str(config_file),
+                    "-e", "3",
+                    "-E", "3",
+                ],
+            )
+
+        assert result.exit_code == EXIT_SUCCESS
+        mock_run_loop.assert_called_once()
+        passed_epic_list = mock_run_loop.call_args[0][2]
+        # -E 3 truncates to [1,2,3]; -e 3 sets start position via state
+        assert passed_epic_list == [1, 2, 3]
+
+    def test_stop_epic_not_in_list_uses_sort_key(self, tmp_path: Path) -> None:
+        """epic_list=[1,2,4,5], -E 3 → keeps [1,2] (sort key filter)."""
+        project_dir, config_file = self._make_project(tmp_path)
+
+        with (
+            patch("bmad_assist.cli.run_loop") as mock_run_loop,
+            patch(
+                "bmad_assist.cli._load_epic_data",
+                return_value=(
+                    [1, 2, 4, 5],
+                    {1: ["1.1"], 2: ["2.1"], 4: ["4.1"], 5: ["5.1"]},
+                ),
+            ),
+        ):
+            result = runner.invoke(
+                app,
+                [
+                    "run",
+                    "--project", str(project_dir),
+                    "--config", str(config_file),
+                    "-E", "3",
+                ],
+            )
+
+        assert result.exit_code == EXIT_SUCCESS
+        mock_run_loop.assert_called_once()
+        passed_epic_list = mock_run_loop.call_args[0][2]
+        assert passed_epic_list == [1, 2]
+
+    def test_stop_after_epic_all_done_exits_cleanly(self, tmp_path: Path) -> None:
+        """Truncated list empty → clean exit."""
+        project_dir, config_file = self._make_project(tmp_path)
+
+        with (
+            patch("bmad_assist.cli.run_loop") as mock_run_loop,
+            patch(
+                "bmad_assist.cli._load_epic_data",
+                return_value=(
+                    [4, 5],
+                    {4: ["4.1"], 5: ["5.1"]},
+                ),
+            ),
+        ):
+            result = runner.invoke(
+                app,
+                [
+                    "run",
+                    "--project", str(project_dir),
+                    "--config", str(config_file),
+                    "-E", "3",
+                ],
+            )
+
+        assert result.exit_code == EXIT_SUCCESS
+        mock_run_loop.assert_not_called()
+        assert "already completed" in result.output.lower()
+
+    def test_stop_after_epic_string_ids(self, tmp_path: Path) -> None:
+        """-E beta with ["alpha","beta","gamma"] → ["alpha","beta"]."""
+        project_dir, config_file = self._make_project(tmp_path)
+
+        with (
+            patch("bmad_assist.cli.run_loop") as mock_run_loop,
+            patch(
+                "bmad_assist.cli._load_epic_data",
+                return_value=(
+                    ["alpha", "beta", "gamma"],
+                    {"alpha": ["alpha.1"], "beta": ["beta.1"], "gamma": ["gamma.1"]},
+                ),
+            ),
+        ):
+            result = runner.invoke(
+                app,
+                [
+                    "run",
+                    "--project", str(project_dir),
+                    "--config", str(config_file),
+                    "-E", "beta",
+                ],
+            )
+
+        assert result.exit_code == EXIT_SUCCESS
+        mock_run_loop.assert_called_once()
+        passed_epic_list = mock_run_loop.call_args[0][2]
+        assert passed_epic_list == ["alpha", "beta"]
+
+    def test_stop_after_epic_without_start(self, tmp_path: Path) -> None:
+        """-E without -e starts from current state, stops after specified epic."""
+        project_dir, config_file = self._make_project(tmp_path)
+
+        with (
+            patch("bmad_assist.cli.run_loop") as mock_run_loop,
+            patch(
+                "bmad_assist.cli._load_epic_data",
+                return_value=(
+                    [1, 2, 3, 4, 5],
+                    {i: [f"{i}.1"] for i in range(1, 6)},
+                ),
+            ),
+        ):
+            result = runner.invoke(
+                app,
+                [
+                    "run",
+                    "--project", str(project_dir),
+                    "--config", str(config_file),
+                    "-E", "3",
+                ],
+            )
+
+        assert result.exit_code == EXIT_SUCCESS
+        mock_run_loop.assert_called_once()
+        passed_epic_list = mock_run_loop.call_args[0][2]
+        assert passed_epic_list == [1, 2, 3]
+
+    def test_stop_after_epic_completion_message(self, tmp_path: Path) -> None:
+        """Completion message shows range info when -E is set."""
+        project_dir, config_file = self._make_project(tmp_path)
+
+        with (
+            patch("bmad_assist.cli.run_loop") as mock_run_loop,
+            patch(
+                "bmad_assist.cli._load_epic_data",
+                return_value=(
+                    [1, 2, 3],
+                    {i: [f"{i}.1"] for i in range(1, 4)},
+                ),
+            ),
+        ):
+            mock_run_loop.return_value = None  # COMPLETED
+            result = runner.invoke(
+                app,
+                [
+                    "run",
+                    "--project", str(project_dir),
+                    "--config", str(config_file),
+                    "-E", "3",
+                ],
+            )
+
+        assert result.exit_code == EXIT_SUCCESS
+        assert "range complete" in result.output.lower()
+        assert "epic 3" in result.output.lower()
