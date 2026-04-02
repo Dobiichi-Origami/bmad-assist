@@ -160,6 +160,39 @@ def _trigger_interactive_repair(project_path: Path, state: LoopState) -> None:
         logger.warning("Sprint repair failed (ignored): %s", e)
 
 
+def _find_archive_script(project_path: Path) -> Path | None:
+    """Find archive-artifacts.sh from package or project.
+
+    Search order:
+    1. Bundled package location (importlib.resources)
+    2. Project scripts/ directory (legacy/development fallback)
+
+    Args:
+        project_path: Project root directory.
+
+    Returns:
+        Path to script, or None if not found.
+
+    """
+    # 1. Bundled in installed package
+    try:
+        from importlib.resources import files
+
+        pkg_script = files("bmad_assist.scripts").joinpath("archive-artifacts.sh")
+        script_path = Path(str(pkg_script))
+        if script_path.exists():
+            return script_path
+    except (ModuleNotFoundError, TypeError, FileNotFoundError):
+        pass
+
+    # 2. Fallback: project scripts/ directory (development)
+    project_script = project_path / "scripts" / "archive-artifacts.sh"
+    if project_script.exists():
+        return project_script
+
+    return None
+
+
 def _run_archive_artifacts(project_path: Path) -> None:
     """Run archive-artifacts.sh to archive multi-LLM validation and review reports.
 
@@ -174,10 +207,10 @@ def _run_archive_artifacts(project_path: Path) -> None:
         project_path: Project root directory.
 
     """
-    script_path = project_path / "scripts" / "archive-artifacts.sh"
+    script_path = _find_archive_script(project_path)
 
-    if not script_path.exists():
-        logger.debug("archive-artifacts.sh not found at %s, skipping", script_path)
+    if script_path is None:
+        logger.debug("archive-artifacts.sh not found in package or project, skipping")
         return
 
     try:

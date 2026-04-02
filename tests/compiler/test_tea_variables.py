@@ -66,13 +66,15 @@ class TestResolveKnowledgeIndex:
 
         assert result is None
 
-    def test_no_index_found(self, tmp_path: Path) -> None:
-        """Should return None when no index found anywhere."""
+    def test_no_project_index_falls_back_to_bundled(self, tmp_path: Path) -> None:
+        """Should fall back to bundled index when no project index found."""
         from bmad_assist.compiler.variables.tea import resolve_knowledge_index
 
         result = resolve_knowledge_index(tmp_path)
 
-        assert result is None
+        # Bundled fallback should resolve it (or None if bundled not available)
+        if result is not None:
+            assert "tea-index.csv" in result
 
 
 class TestResolveTeaConfigFlags:

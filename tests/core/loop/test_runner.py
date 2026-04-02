@@ -1037,13 +1037,6 @@ class TestArchiveArtifacts:
         """Archive script is called after CODE_REVIEW_SYNTHESIS phase success."""
         from bmad_assist.core.loop.runner import _run_archive_artifacts
 
-        # Create mock script
-        scripts_dir = tmp_path / "scripts"
-        scripts_dir.mkdir()
-        script_path = scripts_dir / "archive-artifacts.sh"
-        script_path.write_text("#!/bin/bash\nexit 0\n")
-        script_path.chmod(0o755)
-
         # subprocess is imported in sprint_sync.py, not runner.py
         with patch("bmad_assist.core.loop.sprint_sync.subprocess.run") as mock_run:
             mock_run.return_value = MagicMock(returncode=0)
@@ -1051,29 +1044,23 @@ class TestArchiveArtifacts:
 
         mock_run.assert_called_once()
         call_args = mock_run.call_args
-        assert str(script_path) in call_args[0][0]
+        assert call_args[0][0][0].endswith("archive-artifacts.sh")
         assert "-s" in call_args[0][0]  # Silent mode
 
     def test_archive_skipped_when_script_missing(self, tmp_path: Path) -> None:
-        """Archive is skipped gracefully when script doesn't exist."""
+        """Archive is skipped gracefully when no script found anywhere."""
         from bmad_assist.core.loop.runner import _run_archive_artifacts
 
-        # subprocess is imported in sprint_sync.py, not runner.py
-        with patch("bmad_assist.core.loop.sprint_sync.subprocess.run") as mock_run:
-            _run_archive_artifacts(tmp_path)
+        # Patch _find_archive_script to return None (simulating no script anywhere)
+        with patch("bmad_assist.core.loop.sprint_sync._find_archive_script", return_value=None):
+            with patch("bmad_assist.core.loop.sprint_sync.subprocess.run") as mock_run:
+                _run_archive_artifacts(tmp_path)
 
-        mock_run.assert_not_called()
+            mock_run.assert_not_called()
 
     def test_archive_handles_script_failure(self, tmp_path: Path) -> None:
         """Archive handles script failure gracefully without crashing."""
         from bmad_assist.core.loop.runner import _run_archive_artifacts
-
-        # Create mock script
-        scripts_dir = tmp_path / "scripts"
-        scripts_dir.mkdir()
-        script_path = scripts_dir / "archive-artifacts.sh"
-        script_path.write_text("#!/bin/bash\nexit 1\n")
-        script_path.chmod(0o755)
 
         # subprocess is imported in sprint_sync.py, not runner.py
         with patch("bmad_assist.core.loop.sprint_sync.subprocess.run") as mock_run:

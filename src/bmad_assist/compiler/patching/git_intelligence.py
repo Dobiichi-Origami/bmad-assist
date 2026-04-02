@@ -24,19 +24,22 @@ from bmad_assist.compiler.patching.types import GitCommand, GitIntelligence
 
 logger = logging.getLogger(__name__)
 
-# Git intelligence config locations (searched in order)
-_GIT_INTEL_DIRS = [
-    "src/bmad_assist/default_patches/git-intelligence",  # Development
-    "bmad_assist/default_patches/git-intelligence",  # Installed package
+# Project-level git intelligence config locations (searched in order)
+_PROJECT_GIT_INTEL_DIRS = [
     "_bmad/bmm/git-intelligence",  # Project override
     ".bmad-assist/patches/git-intelligence",  # User override
 ]
+
+# Package-level default config (relative to bmad_assist package root)
+_PACKAGE_GIT_INTEL_DIR = "default_patches/git-intelligence"
 
 
 def _find_git_intel_file(name: str, project_root: Path) -> Path | None:
     """Find git intelligence YAML file by name.
 
-    Searches standard locations for git-intelligence/{name}.yaml.
+    Search order:
+    1. Project override locations (user's project)
+    2. Bundled package default (installed bmad_assist)
 
     Args:
         name: Name of git-intelligence config (e.g., "dev-story").
@@ -48,27 +51,20 @@ def _find_git_intel_file(name: str, project_root: Path) -> Path | None:
     """
     filename = f"{name}.yaml"
 
-    # First check project override locations
-    for rel_dir in [_d for _d in _GIT_INTEL_DIRS if "default_patches" not in _d]:
+    # 1. Check project override locations
+    for rel_dir in _PROJECT_GIT_INTEL_DIRS:
         path = project_root / rel_dir / filename
         if path.exists():
             return path
 
-    # Then check installed/default locations
-    # Try from current directory (for development)
-    for rel_dir in _GIT_INTEL_DIRS:
-        path = Path.cwd() / rel_dir / filename
-        if path.exists():
-            return path
-
-    # Try from package location
+    # 2. Check bundled package location
     try:
         import bmad_assist
+
         pkg_root = Path(bmad_assist.__file__).parent
-        for rel_dir in _GIT_INTEL_DIRS:
-            path = pkg_root / rel_dir / filename
-            if path.exists():
-                return path
+        path = pkg_root / _PACKAGE_GIT_INTEL_DIR / filename
+        if path.exists():
+            return path
     except (ImportError, AttributeError):
         pass
 

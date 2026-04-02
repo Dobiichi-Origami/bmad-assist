@@ -94,6 +94,17 @@ def resolve_knowledge_index(
         logger.debug("Using fallback knowledge index: %s", fallback_path)
         return str(fallback_path)
 
+    # Check bundled knowledge base (package install fallback)
+    try:
+        from bmad_assist.testarch.knowledge_base import get_bundled_index_path
+
+        bundled_path = get_bundled_index_path()
+        if bundled_path is not None:
+            logger.debug("Using bundled knowledge index: %s", bundled_path)
+            return str(bundled_path)
+    except (ImportError, ModuleNotFoundError):
+        pass
+
     logger.debug("No knowledge index found (not a blocker)")
     return None
 
@@ -244,11 +255,12 @@ def resolve_tea_variables(
         Updated resolved variables dict with TEA variables.
 
     """
-    # Resolve knowledge index
-    ki_path = resolve_knowledge_index(project_root, knowledge_index_path)
-    if ki_path:
-        resolved["knowledgeIndex"] = ki_path
-        logger.debug("Set knowledgeIndex: %s", ki_path)
+    # Resolve knowledge index (only if not already set by caller)
+    if "knowledgeIndex" not in resolved:
+        ki_path = resolve_knowledge_index(project_root, knowledge_index_path)
+        if ki_path:
+            resolved["knowledgeIndex"] = ki_path
+            logger.debug("Set knowledgeIndex: %s", ki_path)
 
     # Resolve TEA config flags
     tea_flags = resolve_tea_config_flags(project_root)

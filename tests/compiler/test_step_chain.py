@@ -470,10 +470,10 @@ name: 'step-01'
 
         assert "<!-- KNOWLEDGE BASE -->" not in compiled
 
-    def test_compile_logs_warning_for_missing_knowledge_index(
+    def test_compile_resolves_knowledge_index_for_tea_workflow(
         self, tmp_path: Path, caplog: pytest.LogCaptureFixture
     ) -> None:
-        """Should log warning when knowledge index missing for TEA workflow."""
+        """Should resolve knowledge index (bundled fallback) for TEA workflow."""
         import logging
 
         from bmad_assist.compiler.step_chain import compile_step_chain
@@ -488,7 +488,7 @@ name: 'step-01'
         )
 
         resolved_vars: dict = {}
-        with caplog.at_level(logging.WARNING):
+        with caplog.at_level(logging.DEBUG):
             compile_step_chain(
                 step_file,
                 resolved_vars,
@@ -496,10 +496,15 @@ name: 'step-01'
                 workflow_id="testarch-atdd",
             )
 
-        # Should warn about missing knowledge index
-        assert any(
-            "knowledge index" in record.message.lower()
-            for record in caplog.records
+        # With bundled fallback, knowledge index should be found (no warning)
+        # or if bundled is unavailable, a debug message is logged
+        warnings = [
+            r for r in caplog.records
+            if r.levelno >= logging.WARNING and "knowledge index" in r.message.lower()
+        ]
+        assert len(warnings) == 0, (
+            "Unexpected warning about missing knowledge index - "
+            "bundled fallback should resolve it"
         )
 
     def test_compile_respects_tea_flags(

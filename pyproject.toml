@@ -48,7 +48,23 @@ bmad-assist = "bmad_assist.cli:app"
 where = ["src"]
 
 [tool.setuptools.package-data]
-bmad_assist = ["workflows/**/*", "workflows/cache/*.tpl.xml", "workflows/cache/*.meta.yaml", "default_patches/*.yaml", "testarch/knowledge_base/**/*", "deep_verify/knowledge/data/*.yaml"]
+bmad_assist = [
+    "workflows/**/*",
+    "workflows/cache/*.tpl.xml",
+    "workflows/cache/*.meta.yaml",
+    "default_patches/*.yaml",
+    "default_patches/git-intelligence/*.yaml",
+    "testarch/knowledge_base/**/*",
+    "testarch/prompts/*.xml",
+    "deep_verify/knowledge/data/*.yaml",
+    "deep_verify/patterns/data/**/*.yaml",
+    "deep_verify/prompts/*.xml",
+    "benchmarking/prompts/*.xml",
+    "qa/prompts/*.xml",
+    "reporting/prompts/**",
+    "scripts/*.sh",
+    "dashboard/static/**/*",
+]
 
 [tool.mypy]
 python_version = "3.11"
