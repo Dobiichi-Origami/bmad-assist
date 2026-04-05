@@ -17,7 +17,7 @@ from typing import Any
 
 import yaml
 
-from bmad_assist.core.config import Config
+from bmad_assist.core.config import Config, get_phase_timeout
 from bmad_assist.core.paths import get_paths
 from bmad_assist.core.types import EpicId
 from bmad_assist.providers import get_provider
@@ -507,7 +507,10 @@ def execute_batch(
     from bmad_assist.core.exceptions import ProviderExitCodeError
 
     provider = get_provider(config.providers.master.provider)
-    timeout = config.timeout * 2  # Shorter timeout for smaller batches
+    # Get timeout from config (respects timeouts.qa_plan_execute)
+    # Batches are smaller, so we multiply by 2 instead of 3
+    base_timeout = get_phase_timeout(config, "qa_plan_execute")
+    timeout = base_timeout * 2  # Shorter timeout for smaller batches
     logger.info("Invoking LLM for batch %d (timeout: %ds, tools: enabled)", batch_id, timeout)
 
     # Try to get results even if provider exits with non-zero code
@@ -616,11 +619,13 @@ def _execute_playwright_category(
         logger.info("Server management enabled: %s", playwright_config.server.command)
 
     # Execute via Playwright (handles server lifecycle)
+    # Get timeout from config (respects timeouts.qa_plan_execute)
+    playwright_timeout = playwright_config.timeout if playwright_config else get_phase_timeout(config, "qa_plan_execute")
     pw_result = execute_playwright_tests(
         tests=tests,
         epic_id=epic_id,
         project_path=project_path,
-        timeout=playwright_config.timeout if playwright_config else config.timeout,
+        timeout=playwright_timeout,
         headless=playwright_config.headless if playwright_config else True,
         config=playwright_config,
     )

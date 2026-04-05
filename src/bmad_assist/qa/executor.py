@@ -16,7 +16,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
 from bmad_assist.compiler import CompilerContext, compile_workflow
-from bmad_assist.core.config import Config
+from bmad_assist.core.config import Config, get_phase_timeout
 from bmad_assist.core.paths import get_paths
 from bmad_assist.core.types import EpicId
 from bmad_assist.providers import get_provider
@@ -273,7 +273,10 @@ def _execute_single_run(
     # Master LLM needs Bash, Read, Write to execute tests
     from bmad_assist.core.exceptions import ProviderExitCodeError
 
-    effective_timeout = config.timeout * 3  # Tests take longer
+    # Get timeout from config (respects timeouts.qa_plan_execute)
+    # Tests typically take longer, so we multiply by 3
+    base_timeout = get_phase_timeout(config, "qa_plan_execute")
+    effective_timeout = base_timeout * 3  # Tests take longer
     logger.info(
         "Invoking LLM (timeout: %ds, tools: enabled)... Output will stream below:",
         effective_timeout,

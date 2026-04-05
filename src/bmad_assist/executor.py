@@ -12,7 +12,7 @@ from pathlib import Path
 from typing import Any
 
 from bmad_assist.compiler import CompilerContext, compile_workflow
-from bmad_assist.core.config import Config
+from bmad_assist.core.config import Config, get_phase_timeout
 from bmad_assist.core.paths import get_paths
 from bmad_assist.core.types import EpicId
 from bmad_assist.providers import get_provider
@@ -182,12 +182,17 @@ def execute_qa_plan(
         # Get master provider
         provider = get_provider(config.providers.master.provider)
 
+        # Get timeout from config (respects timeouts.qa_plan_execute)
+        # Tests typically take longer, so we multiply by 3
+        base_timeout = get_phase_timeout(config, "qa_plan_execute")
+        effective_timeout = base_timeout * 3  # Tests take longer
+
         # Invoke LLM - this executes the tests
-        logger.info("Invoking LLM to execute tests...")
+        logger.info("Invoking LLM to execute tests (timeout=%ds)...", effective_timeout)
         result = provider.invoke(
             prompt,
             model=config.providers.master.model,
-            timeout=config.timeout * 3,  # Tests take longer
+            timeout=effective_timeout,
         )
 
         if result.exit_code != 0:

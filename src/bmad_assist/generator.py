@@ -12,7 +12,7 @@ from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
 
-from bmad_assist.core.config import Config
+from bmad_assist.core.config import Config, get_phase_timeout
 from bmad_assist.core.types import EpicId
 from bmad_assist.providers import get_provider
 from bmad_assist.qa.checker import get_qa_plan_path, get_trace_path
@@ -275,12 +275,15 @@ def _run_qa_plan_workflow(
         # Get master provider
         provider = get_provider(config.providers.master.provider)
 
+        # Get timeout from config (respects timeouts.qa_plan_generate)
+        timeout = get_phase_timeout(config, "qa_plan_generate")
+
         # Invoke LLM
-        logger.info("Invoking LLM for QA plan generation...")
+        logger.info("Invoking LLM for QA plan generation (timeout=%ds)...", timeout)
         result = provider.invoke(
             prompt,
             model=config.providers.master.model,
-            timeout=config.timeout,
+            timeout=timeout,
         )
 
         if result.exit_code != 0:
