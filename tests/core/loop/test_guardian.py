@@ -41,45 +41,40 @@ class TestGetNextPhase:
         result = get_next_phase(Phase.CODE_REVIEW_SYNTHESIS)
         assert result is None
 
-    def test_get_next_phase_returns_test_review_for_code_review_synthesis_with_tea_loop(self) -> None:
-        """AC7: CODE_REVIEW_SYNTHESIS -> TEST_REVIEW when using TEA_FULL_LOOP_CONFIG."""
-        from unittest.mock import patch, MagicMock
-        from bmad_assist.core.config.loop_config import set_loop_config
-        from bmad_assist.core.config.models.loop import TEA_FULL_LOOP_CONFIG
-        from bmad_assist.core.loop import Phase, get_next_phase
-
-        # Use TEA_FULL_LOOP_CONFIG which has TEST_REVIEW after CODE_REVIEW_SYNTHESIS
-        set_loop_config(TEA_FULL_LOOP_CONFIG)
-        try:
-            # With testarch enabled, CODE_REVIEW_SYNTHESIS -> TEST_REVIEW
-            mock_config = MagicMock()
-            mock_config.testarch = MagicMock()  # Not None
-            with patch("bmad_assist.core.config.get_config", return_value=mock_config):
-                result = get_next_phase(Phase.CODE_REVIEW_SYNTHESIS)
-            assert result == Phase.TEST_REVIEW
-        finally:
-            # Restore default
-            from bmad_assist.core.config.models.loop import DEFAULT_LOOP_CONFIG
-            set_loop_config(DEFAULT_LOOP_CONFIG)
-
-    def test_get_next_phase_returns_none_for_test_review_with_tea_loop(self) -> None:
-        """AC7: TEST_REVIEW is last in TEA_FULL_LOOP_CONFIG.story, returns None."""
+    def test_get_next_phase_returns_none_for_code_review_synthesis_with_tea_loop(self) -> None:
+        """AC7: CODE_REVIEW_SYNTHESIS is last in TEA_FULL_LOOP_CONFIG.story, returns None."""
         from unittest.mock import patch, MagicMock
         from bmad_assist.core.config.loop_config import set_loop_config
         from bmad_assist.core.config.models.loop import TEA_FULL_LOOP_CONFIG, DEFAULT_LOOP_CONFIG
         from bmad_assist.core.loop import Phase, get_next_phase
 
-        # Use TEA_FULL_LOOP_CONFIG which has TEST_REVIEW
+        # Use TEA_FULL_LOOP_CONFIG: test_review is after dev_story, before code_review
         set_loop_config(TEA_FULL_LOOP_CONFIG)
         try:
-            # With testarch enabled, TEST_REVIEW is the last story phase
+            mock_config = MagicMock()
+            mock_config.testarch = MagicMock()  # Not None
+            with patch("bmad_assist.core.config.get_config", return_value=mock_config):
+                result = get_next_phase(Phase.CODE_REVIEW_SYNTHESIS)
+            assert result is None
+        finally:
+            set_loop_config(DEFAULT_LOOP_CONFIG)
+
+    def test_get_next_phase_returns_code_review_for_test_review_with_tea_loop(self) -> None:
+        """AC7: TEST_REVIEW -> CODE_REVIEW in TEA_FULL_LOOP_CONFIG."""
+        from unittest.mock import patch, MagicMock
+        from bmad_assist.core.config.loop_config import set_loop_config
+        from bmad_assist.core.config.models.loop import TEA_FULL_LOOP_CONFIG, DEFAULT_LOOP_CONFIG
+        from bmad_assist.core.loop import Phase, get_next_phase
+
+        # Use TEA_FULL_LOOP_CONFIG: test_review -> code_review
+        set_loop_config(TEA_FULL_LOOP_CONFIG)
+        try:
             mock_config = MagicMock()
             mock_config.testarch = MagicMock()  # Not None
             with patch("bmad_assist.core.config.get_config", return_value=mock_config):
                 result = get_next_phase(Phase.TEST_REVIEW)
-            assert result is None
+            assert result == Phase.CODE_REVIEW
         finally:
-            # Restore default
             set_loop_config(DEFAULT_LOOP_CONFIG)
 
     def test_get_next_phase_returns_none_for_retrospective(self) -> None:

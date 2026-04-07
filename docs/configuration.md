@@ -301,6 +301,7 @@ loop:
     - validate_story
     - validate_story_synthesis
     - dev_story
+    - test_review
     - code_review
     - code_review_synthesis
   epic_teardown:              # After last story
@@ -313,13 +314,30 @@ loop:
 
 ### Code Review Rework Loop
 
-When `code_review_rework: true`, the runner checks the code review synthesis verdict. If the verdict is negative (issues found), it automatically loops back to `dev_story` for fixes, then re-runs code review. The cycle repeats up to `max_rework_attempts` times.
+When `code_review_rework: true`, the runner checks the code review synthesis verdict. If the verdict is negative (issues found), it automatically loops back to `dev_story` for fixes, then re-runs test review and code review. The cycle repeats up to `max_rework_attempts` times.
 
 ```
-dev_story → code_review → code_review_synthesis
-    ↑                            │
-    └── (verdict negative) ──────┘
+dev_story → test_review → code_review → code_review_synthesis
+    ↑                                          │
+    └────────── (verdict negative) ────────────┘
 ```
+
+### Test Review Quality Thresholds
+
+When `test_review` is in the story loop, two threshold fields in the `testarch` config control gating behavior:
+
+```yaml
+testarch:
+  test_review_quality_threshold: 70  # Soft gate: warns below this score
+  test_review_block_threshold: 50    # Hard gate: blocks progress below this score
+```
+
+| Field | Default | Description |
+|-------|---------|-------------|
+| `test_review_quality_threshold` | 70 | Soft gate — scores below this trigger a warning but allow the loop to continue |
+| `test_review_block_threshold` | 50 | Hard gate — scores below this block the story from proceeding to code review |
+
+See [TEA Configuration](tea-configuration.md) for full testarch settings.
 
 ## ToolCallGuard
 

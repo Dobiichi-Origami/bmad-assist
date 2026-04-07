@@ -216,10 +216,10 @@ bmad-assist sprint sync --project ./my-project [--verbose]
 | Phases | Sprint Status |
 |--------|---------------|
 | CREATE_STORY, VALIDATE_STORY, VALIDATE_STORY_SYNTHESIS | in-progress |
-| ATDD, DEV_STORY | in-progress |
+| ATDD, DEV_STORY, TEST_REVIEW | in-progress |
 | TEA_FRAMEWORK, TEA_CI, TEA_TEST_DESIGN, TEA_AUTOMATE | in-progress |
 | CODE_REVIEW, CODE_REVIEW_SYNTHESIS | review |
-| TEST_REVIEW, TRACE, TEA_NFR_ASSESS | review |
+| TRACE, TEA_NFR_ASSESS | review |
 | RETROSPECTIVE, QA_PLAN_GENERATE, QA_PLAN_EXECUTE | done |
 
 ## Evidence Hierarchy
@@ -372,6 +372,7 @@ loop:
     - create_story
     - validate_story
     - dev_story
+    - test_review
     - code_review
     - code_review_synthesis
   epic_teardown:

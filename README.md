@@ -18,9 +18,9 @@ You write the docs (or have AI help you write them with BMAD). bmad-assist reads
 One LLM (Master) writes all code. The others only validate and review - they never touch your files.
 
 ```
-  Create Story ──► Validate (multi-LLM) ──► Synthesis ──► Dev Story ──► Code Review (multi-LLM) ──► Synthesis
-       │                                                                                                │
-       └────────────────────────────────── next story ◄─────────────────────────────────────────────────┘
+  Create Story ──► Validate (multi-LLM) ──► Synthesis ──► Dev Story ──► Test Review ──► Code Review (multi-LLM) ──► Synthesis
+       │                                                                                                              │
+       └──────────────────────────────────────── next story ◄────────────────────────────────────────────────────────┘
 ```
 
 ## Features
@@ -192,6 +192,7 @@ bmad-assist uses different LLM patterns depending on the workflow phase:
 | `validate_story` | **Multi (parallel)** | Multiple LLMs validate independently for diverse perspectives |
 | `validate_story_synthesis` | Master | Single LLM consolidates validator reports |
 | `dev_story` | Master | Single LLM implements code for consistency |
+| `test_review` | Master | Single LLM reviews test quality against ATDD checklist |
 | `code_review` | **Multi (parallel)** | Multiple LLMs review independently as adversarial reviewers |
 | `code_review_synthesis` | Master | Single LLM consolidates review findings |
 | `retrospective` | Master | Single LLM generates retrospective |

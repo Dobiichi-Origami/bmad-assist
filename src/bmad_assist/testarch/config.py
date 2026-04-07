@@ -684,6 +684,39 @@ class TestarchConfig(BaseModel):
         ),
         json_schema_extra={"security": "safe", "ui_widget": "dropdown"},
     )
+    # Test review quality thresholds
+    test_review_quality_threshold: int = Field(
+        default=70,
+        ge=0,
+        le=100,
+        description=(
+            "Soft quality gate threshold (0-100). "
+            "When test review score is below this, synthesis receives a suggestion "
+            "to consider requiring test quality improvements in rework."
+        ),
+        json_schema_extra={"security": "safe", "ui_widget": "number"},
+    )
+    test_review_block_threshold: int = Field(
+        default=50,
+        ge=0,
+        le=100,
+        description=(
+            "Hard quality gate threshold (0-100). "
+            "When test review score is below this, synthesis receives a strong directive "
+            "that rework MUST address critical test quality issues."
+        ),
+        json_schema_extra={"security": "safe", "ui_widget": "number"},
+    )
+
+    @model_validator(mode="after")
+    def validate_threshold_relationship(self) -> Self:
+        """Ensure block_threshold <= quality_threshold."""
+        if self.test_review_block_threshold > self.test_review_quality_threshold:
+            raise ValueError(
+                f"test_review_block_threshold ({self.test_review_block_threshold}) "
+                f"must be <= test_review_quality_threshold ({self.test_review_quality_threshold})"
+            )
+        return self
 
     @model_validator(mode="after")
     def validate_engagement_model_consistency(self) -> Self:

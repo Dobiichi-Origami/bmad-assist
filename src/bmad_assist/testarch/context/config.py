@@ -31,13 +31,18 @@ class TEAContextWorkflowConfig(BaseModel):
         include: List of artifact types to include for this workflow.
             Valid types: test-design, atdd, test-review, trace.
             Empty list means no artifacts for this workflow.
+        condensed: List of artifact types that should use condensed mode.
+            When an artifact type is in both include and condensed,
+            the resolver prefers summary files over full reports.
+            Currently only test-review supports condensed mode.
 
     Examples:
         ```yaml
         dev_story:
           include: [test-design, atdd]
         code_review:
-          include: []  # Explicitly disable TEA context
+          include: [test-design, test-review]
+          condensed: [test-review]
         ```
 
     """
@@ -52,6 +57,11 @@ class TEAContextWorkflowConfig(BaseModel):
             "ui_widget": "checkbox_group",
             "options": list(VALID_ARTIFACT_TYPES),
         },
+    )
+
+    condensed: list[str] = Field(
+        default_factory=list,
+        description="Artifact types that should use condensed mode (prefer summary files)",
     )
 
     @field_validator("include", mode="after")
@@ -145,7 +155,10 @@ class TEAContextConfig(BaseModel):
     workflows: dict[str, TEAContextWorkflowConfig] = Field(
         default_factory=lambda: {
             "dev_story": TEAContextWorkflowConfig(include=["test-design", "atdd"]),
-            "code_review": TEAContextWorkflowConfig(include=["test-design"]),
+            "code_review": TEAContextWorkflowConfig(
+                include=["test-design", "test-review"],
+                condensed=["test-review"],
+            ),
             "code_review_synthesis": TEAContextWorkflowConfig(include=["test-review"]),
             "retrospective": TEAContextWorkflowConfig(include=["trace"]),
         },

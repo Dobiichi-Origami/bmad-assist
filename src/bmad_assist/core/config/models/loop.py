@@ -23,9 +23,9 @@ class LoopConfig(BaseModel):
             TEA phases available: tea_framework, tea_ci, tea_test_design, tea_automate
         story: Phases to run for each story in sequence.
             Standard: ["create_story", "validate_story", "validate_story_synthesis",
-                      "atdd", "dev_story", "code_review", "code_review_synthesis",
-                      "test_review"]
-            TEA phases available: atdd (before dev_story), test_review (after code_review_synthesis)
+                      "atdd", "dev_story", "test_review", "code_review",
+                      "code_review_synthesis"]
+            TEA phases available: atdd (before dev_story), test_review (after dev_story, before code_review)
         epic_teardown: Phases to run once at the end of each epic
             (after last story's CODE_REVIEW_SYNTHESIS).
             TEA phases available: trace (before retrospective), tea_nfr_assess (after trace)
@@ -38,7 +38,7 @@ class LoopConfig(BaseModel):
             - tea_automate: Expand test automation (TEA Lite model)
         - story scope:
             - atdd: Acceptance TDD before implementation
-            - test_review: Test quality review after code review
+            - test_review: Test quality review after dev_story, before code_review
         - epic_teardown scope:
             - trace: Requirements traceability matrix generation
             - tea_nfr_assess: Non-functional requirements assessment
@@ -125,14 +125,23 @@ class LoopConfig(BaseModel):
                     "ATDD should run before implementation for TDD flow."
                 )
 
-        # test_review should come after code_review_synthesis
+        # test_review should come after dev_story and before code_review_synthesis
         if "test_review" in story and "code_review_synthesis" in story:
             review_idx = story.index("test_review")
             synthesis_idx = story.index("code_review_synthesis")
-            if review_idx < synthesis_idx:
+            if review_idx > synthesis_idx:
                 logger.warning(
-                    "Phase ordering: 'test_review' appears before 'code_review_synthesis'. "
-                    "Test review should run after code review is complete."
+                    "Phase ordering: 'test_review' appears after 'code_review_synthesis'. "
+                    "Test review should run before code review synthesis to feed findings into review."
+                )
+
+        if "test_review" in story and "dev_story" in story:
+            review_idx = story.index("test_review")
+            dev_idx = story.index("dev_story")
+            if review_idx < dev_idx:
+                logger.warning(
+                    "Phase ordering: 'test_review' appears before 'dev_story'. "
+                    "Test review should run after implementation when test files are complete."
                 )
 
         # trace should come before retrospective in teardown
@@ -206,9 +215,9 @@ TEA_FULL_LOOP_CONFIG: LoopConfig = LoopConfig(
         "validate_story_synthesis",
         "atdd",  # Acceptance TDD before implementation
         "dev_story",
+        "test_review",  # Test quality review after dev, before code review
         "code_review",
         "code_review_synthesis",
-        "test_review",  # Test quality review after code review
     ],
     epic_teardown=[
         "trace",  # Requirements traceability matrix

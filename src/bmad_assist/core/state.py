@@ -275,6 +275,8 @@ class State(BaseModel):
     epic_setup_complete: bool = False  # Reset to False on epic change
     # Code review rework loop: tracks rework attempts per story
     code_review_rework_count: int = 0  # Reset to 0 on story change
+    # Test review quality score (written by TestReviewHandler, consumed by synthesis)
+    test_review_quality_score: int | None = None
 
 
 def save_state(state: State, path: str | Path) -> None:

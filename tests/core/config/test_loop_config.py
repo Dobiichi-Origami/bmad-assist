@@ -122,12 +122,19 @@ class TestTeaFullLoopConfig:
         dev_idx = story.index("dev_story")
         assert atdd_idx < dev_idx
 
-    def test_test_review_after_code_review_synthesis(self) -> None:
-        """test_review comes after code_review_synthesis in TEA story phases."""
+    def test_test_review_after_dev_story(self) -> None:
+        """test_review comes after dev_story in TEA story phases."""
         story = TEA_FULL_LOOP_CONFIG.story
         test_review_idx = story.index("test_review")
-        code_review_synthesis_idx = story.index("code_review_synthesis")
-        assert test_review_idx > code_review_synthesis_idx
+        dev_story_idx = story.index("dev_story")
+        assert test_review_idx > dev_story_idx
+
+    def test_test_review_before_code_review(self) -> None:
+        """test_review comes before code_review in TEA story phases."""
+        story = TEA_FULL_LOOP_CONFIG.story
+        test_review_idx = story.index("test_review")
+        code_review_idx = story.index("code_review")
+        assert test_review_idx < code_review_idx
 
     # --- epic_teardown tests ---
 
@@ -171,7 +178,7 @@ class TestPhaseOrderingValidation:
         with caplog.at_level(logging.WARNING):
             LoopConfig(
                 epic_setup=[],
-                story=["atdd", "dev_story", "code_review", "code_review_synthesis", "test_review"],
+                story=["atdd", "dev_story", "test_review", "code_review", "code_review_synthesis"],
                 epic_teardown=["trace", "retrospective"],
             )
 
@@ -190,16 +197,27 @@ class TestPhaseOrderingValidation:
 
         assert any("atdd" in r.message.lower() and "dev_story" in r.message.lower() for r in caplog.records)
 
-    def test_warns_test_review_before_code_review_synthesis(self, caplog: pytest.LogCaptureFixture) -> None:
-        """Logs warning when test_review comes before code_review_synthesis."""
+    def test_warns_test_review_after_code_review_synthesis(self, caplog: pytest.LogCaptureFixture) -> None:
+        """Logs warning when test_review comes after code_review_synthesis."""
         with caplog.at_level(logging.WARNING):
             LoopConfig(
                 epic_setup=[],
-                story=["test_review", "code_review_synthesis"],  # Wrong order!
+                story=["dev_story", "code_review_synthesis", "test_review"],  # Wrong order!
                 epic_teardown=[],
             )
 
         assert any("test_review" in r.message.lower() and "code_review_synthesis" in r.message.lower() for r in caplog.records)
+
+    def test_warns_test_review_before_dev_story(self, caplog: pytest.LogCaptureFixture) -> None:
+        """Logs warning when test_review comes before dev_story."""
+        with caplog.at_level(logging.WARNING):
+            LoopConfig(
+                epic_setup=[],
+                story=["test_review", "dev_story"],  # Wrong order!
+                epic_teardown=[],
+            )
+
+        assert any("test_review" in r.message.lower() and "dev_story" in r.message.lower() for r in caplog.records)
 
     def test_warns_retrospective_before_trace(self, caplog: pytest.LogCaptureFixture) -> None:
         """Logs warning when retrospective comes before trace."""

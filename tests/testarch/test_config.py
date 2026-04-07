@@ -1061,3 +1061,72 @@ class TestTestarchConfigViaLoadConfig:
                 }
             )
         assert ".csv" in str(exc_info.value)
+
+
+# =============================================================================
+# Test Quality Threshold Validation
+# =============================================================================
+
+
+class TestQualityThresholdValidation:
+    """Test test_review quality threshold fields in TestarchConfig."""
+
+    def test_default_threshold_values(self) -> None:
+        """TestarchConfig has correct default threshold values."""
+        config = TestarchConfig()
+        assert config.test_review_quality_threshold == 70
+        assert config.test_review_block_threshold == 50
+
+    def test_custom_threshold_values(self) -> None:
+        """TestarchConfig accepts custom threshold values."""
+        config = TestarchConfig(
+            test_review_quality_threshold=80,
+            test_review_block_threshold=60,
+        )
+        assert config.test_review_quality_threshold == 80
+        assert config.test_review_block_threshold == 60
+
+    def test_equal_thresholds_valid(self) -> None:
+        """block_threshold == quality_threshold is valid."""
+        config = TestarchConfig(
+            test_review_quality_threshold=70,
+            test_review_block_threshold=70,
+        )
+        assert config.test_review_block_threshold == 70
+
+    def test_block_threshold_greater_than_quality_raises(self) -> None:
+        """block_threshold > quality_threshold raises ValidationError."""
+        with pytest.raises(ValidationError) as exc_info:
+            TestarchConfig(
+                test_review_quality_threshold=50,
+                test_review_block_threshold=70,
+            )
+        assert "must be <=" in str(exc_info.value)
+
+    def test_threshold_lower_bound(self) -> None:
+        """Thresholds below 0 raise ValidationError."""
+        with pytest.raises(ValidationError):
+            TestarchConfig(test_review_quality_threshold=-1)
+
+    def test_threshold_upper_bound(self) -> None:
+        """Thresholds above 100 raise ValidationError."""
+        with pytest.raises(ValidationError):
+            TestarchConfig(test_review_quality_threshold=101)
+
+    def test_zero_thresholds_valid(self) -> None:
+        """Zero thresholds are valid."""
+        config = TestarchConfig(
+            test_review_quality_threshold=0,
+            test_review_block_threshold=0,
+        )
+        assert config.test_review_quality_threshold == 0
+        assert config.test_review_block_threshold == 0
+
+    def test_max_thresholds_valid(self) -> None:
+        """Max thresholds (100) are valid."""
+        config = TestarchConfig(
+            test_review_quality_threshold=100,
+            test_review_block_threshold=100,
+        )
+        assert config.test_review_quality_threshold == 100
+        assert config.test_review_block_threshold == 100

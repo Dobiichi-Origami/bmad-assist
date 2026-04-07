@@ -51,8 +51,15 @@ ARTIFACT_CONFIGS: dict[str, tuple[str, list[str]]] = {
     "test-review": (
         "test-reviews",
         [
-            "test-review-{story_dotted}.md",
-            "test-review-{story_hyphen}.md",
+            "test-review-{story_dotted}*.md",
+            "test-review-{story_hyphen}*.md",
+        ],
+    ),
+    "test-review-summary": (
+        "test-reviews",
+        [
+            "test-review-summary-{story_dotted}*.md",
+            "test-review-summary-{story_hyphen}*.md",
         ],
     ),
     "trace": (
@@ -66,9 +73,9 @@ ARTIFACT_CONFIGS: dict[str, tuple[str, list[str]]] = {
 # For backward compatibility: simple pattern mapping (flattened)
 ARTIFACT_PATTERNS: dict[str, list[str]] = {k: v[1] for k, v in ARTIFACT_CONFIGS.items()}
 
-# Valid artifact types (for config validation) - exclude internal test-design-system
+# Valid artifact types (for config validation) - exclude internal types
 VALID_ARTIFACT_TYPES: frozenset[str] = frozenset(
-    k for k in ARTIFACT_CONFIGS if k != "test-design-system"
+    k for k in ARTIFACT_CONFIGS if k not in ("test-design-system", "test-review-summary")
 )
 
 # Legacy constant (deprecated, kept for backward compatibility)

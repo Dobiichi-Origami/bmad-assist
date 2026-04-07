@@ -444,6 +444,7 @@ class CodeReviewSynthesisCompiler:
         """Build synthesis mission description.
 
         Emphasizes SOURCE CODE modifications (not story file).
+        Injects quality gate directives based on test review score.
 
         Args:
             resolved: Resolved variables.
@@ -455,6 +456,9 @@ class CodeReviewSynthesisCompiler:
         epic_num = resolved.get("epic_num", "?")
         story_num = resolved.get("story_num", "?")
         reviewer_count = resolved.get("reviewer_count", 0)
+
+        # Build quality gate directive (if applicable)
+        quality_gate_section = self._build_quality_gate_directive(resolved)
 
         return f"""Master Code Review Synthesis: Story {epic_num}.{story_num}
 
@@ -486,12 +490,44 @@ Your mission:
    - Apply fixes for verified issues
    - Do NOT modify the story file (only Dev Agent Record if needed)
    - Document what you changed and why
-
+{quality_gate_section}
 Output format:
 ## Synthesis Summary
 ## Issues Verified (by severity)
 ## Issues Dismissed (false positives with reasoning)
 ## Source Code Fixes Applied"""
+
+    def _build_quality_gate_directive(self, resolved: dict[str, Any]) -> str:
+        """Build quality gate directive based on test review score and thresholds.
+
+        Args:
+            resolved: Resolved variables containing quality score and thresholds.
+
+        Returns:
+            Quality gate directive string (empty if no signal needed).
+
+        """
+        score = resolved.get("test_review_quality_score")
+        if score is None:
+            return ""
+
+        quality_threshold = resolved.get("test_review_quality_threshold", 70)
+        block_threshold = resolved.get("test_review_block_threshold", 50)
+
+        if score < block_threshold:
+            return (
+                f"\n5. TEST QUALITY GATE (CRITICAL)\n"
+                f"   Test quality score is {score}/100 (CRITICAL — below block threshold {block_threshold}).\n"
+                f"   Rework MUST include fixing critical test quality issues identified in the test review.\n"
+                f"   Strongly consider REJECT verdict if test issues are not addressable in rework.\n"
+            )
+        elif score < quality_threshold:
+            return (
+                f"\n5. TEST QUALITY GATE\n"
+                f"   Test quality score is {score}/100 (below quality threshold {quality_threshold}).\n"
+                f"   Consider requiring test quality improvements in rework.\n"
+            )
+        return ""
 
     def compile(self, context: CompilerContext) -> CompiledWorkflow:
         """Compile synthesis workflow with given context.

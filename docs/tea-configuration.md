@@ -78,8 +78,12 @@ testarch:
   test_design_mode: auto             # off | auto | on
   automate_mode: off                 # off | auto | on
   nfr_assess_mode: off               # off | auto | on
-  test_review_on_code_complete: auto # off | auto | on
+  test_review_on_code_complete: auto # off | auto | on — controls run/skip regardless of phase position (applies whether test_review runs in-loop after dev_story or post-loop after code_review_synthesis)
   trace_on_epic_complete: auto       # off | auto | on
+
+  # Test review quality thresholds
+  test_review_quality_threshold: 70  # Soft gate: warns below this score
+  test_review_block_threshold: 50    # Hard gate: blocks progress below this score
 ```
 
 | Value | Effect |
@@ -126,6 +130,25 @@ testarch:
     llm_weight: 0.5
     threshold: 0.5
 ```
+
+---
+
+## Test Review Quality Thresholds
+
+The `test_review` phase uses two score thresholds to gate story progress:
+
+| Field | Default | Description |
+|-------|---------|-------------|
+| `test_review_quality_threshold` | 70 | **Soft gate** — scores below this trigger a warning but the loop continues to code review |
+| `test_review_block_threshold` | 50 | **Hard gate** — scores below this block the story from proceeding to code review |
+
+```yaml
+testarch:
+  test_review_quality_threshold: 70
+  test_review_block_threshold: 50
+```
+
+When the test review score falls between the two thresholds (e.g., 55 with defaults), a warning is logged but the story proceeds. When the score falls below the block threshold, the story is blocked from advancing to code review.
 
 ---
 

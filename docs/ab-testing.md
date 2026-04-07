@@ -107,6 +107,7 @@ Phase names accept both kebab-case and snake_case (normalized internally).
 | `validate-story` | Multi-LLM story validation |
 | `validate-story-synthesis` | Validation consensus |
 | `dev-story` | Implementation phase |
+| `test-review` | Test quality review |
 | `code-review` | Multi-LLM code review |
 | `code-review-synthesis` | Review consensus |
 | `retrospective` | Epic retrospective |

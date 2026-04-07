@@ -21,6 +21,7 @@ from bmad_assist.testarch.context.config import TEAContextConfig
 from bmad_assist.testarch.context.resolvers import RESOLVER_REGISTRY
 from bmad_assist.testarch.context.resolvers.atdd import ATDDResolver
 from bmad_assist.testarch.context.resolvers.base import BaseResolver
+from bmad_assist.testarch.context.resolvers.test_review import TestReviewResolver
 
 if TYPE_CHECKING:
     from pathlib import Path
@@ -263,7 +264,13 @@ class TEAContextService:
                 resolver = resolver_cls(base_path, artifact_budget)
 
             try:
-                artifacts = resolver.resolve(epic_id, story_id)
+                # Pass condensed flag to TestReviewResolver
+                if isinstance(resolver, TestReviewResolver) and artifact_type in (
+                    wf_config.condensed or []
+                ):
+                    artifacts = resolver.resolve(epic_id, story_id, condensed=True)
+                else:
+                    artifacts = resolver.resolve(epic_id, story_id)
                 for path, content in artifacts.items():
                     content_tokens = estimate_tokens(content)
                     if total_tokens + content_tokens > config.budget:

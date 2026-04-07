@@ -251,9 +251,9 @@ loop:
     - validate_story_synthesis
     - atdd                    # Generate ATDD checklist before implementation
     - dev_story
+    - test_review             # Review test quality after dev, before code review
     - code_review
     - code_review_synthesis
-    - test_review             # Review test quality after code review
   epic_teardown:
     - trace                   # Generate traceability matrix
     - tea_nfr_assess          # NFR assessment before release
@@ -274,8 +274,11 @@ testarch:
   automate_mode: off              # off | auto | on - TEA Lite (standalone test generation)
   nfr_assess_mode: off            # off | auto | on - release quality gates
   trace_on_epic_complete: auto    # off | auto | on
-  test_review_on_code_complete: auto  # off | auto | on
+  test_review_on_code_complete: auto  # off | auto | on - controls whether test_review runs (regardless of phase position)
   test_dir: tests/                # test directory location
+  # Test review quality thresholds (for quality gate signals in synthesis)
+  test_review_quality_threshold: 70  # Soft gate: synthesis gets suggestion to consider test improvements (0-100)
+  test_review_block_threshold: 50    # Hard gate: synthesis gets directive that rework MUST fix test issues (0-100)
 
   # ATDD eligibility scoring (for atdd_mode: auto)
   # eligibility:

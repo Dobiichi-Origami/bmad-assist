@@ -477,3 +477,124 @@ class TestPhaseInStateModel:
         # TEST_REVIEW is a valid Phase enum
         assert Phase.TEST_REVIEW in Phase
         assert Phase.TEST_REVIEW.value == "test_review"
+
+
+# =============================================================================
+# Task 8.6: Integration test - quality_score written to state
+# =============================================================================
+
+
+class TestQualityScoreWrittenToState:
+    """Test that execute() writes quality_score to state."""
+
+    def test_quality_score_written_on_success(
+        self,
+        mock_config: MagicMock,
+        tmp_path: Path,
+    ) -> None:
+        """quality_score is written to state after successful execution."""
+        from bmad_assist.testarch.handlers import TestReviewHandler
+
+        state = State(
+            current_epic=1,
+            current_story="1.1",
+            current_phase=Phase.TEST_REVIEW,
+            atdd_ran_for_story=True,
+        )
+        assert state.test_review_quality_score is None
+
+        handler = TestReviewHandler(mock_config, tmp_path)
+
+        # Mock the workflow to return a successful result with quality_score
+        successful_result = PhaseResult.ok({
+            "response": "Quality Score: 78/100\nTest review done.",
+            "quality_score": 78,
+            "review_file": "/tmp/test-review.md",
+        })
+
+        with patch.object(handler, "_execute_with_mode_check", return_value=successful_result):
+            result = handler.execute(state)
+
+        assert result.success is True
+        assert state.test_review_quality_score == 78
+
+    def test_quality_score_not_written_when_none(
+        self,
+        mock_config: MagicMock,
+        tmp_path: Path,
+    ) -> None:
+        """quality_score remains None when extraction fails."""
+        from bmad_assist.testarch.handlers import TestReviewHandler
+
+        state = State(
+            current_epic=1,
+            current_story="1.1",
+            current_phase=Phase.TEST_REVIEW,
+            atdd_ran_for_story=True,
+        )
+
+        handler = TestReviewHandler(mock_config, tmp_path)
+
+        successful_result = PhaseResult.ok({
+            "response": "Test review done but no score found.",
+            "quality_score": None,
+            "review_file": "/tmp/test-review.md",
+        })
+
+        with patch.object(handler, "_execute_with_mode_check", return_value=successful_result):
+            result = handler.execute(state)
+
+        assert result.success is True
+        assert state.test_review_quality_score is None
+
+    def test_quality_score_not_written_when_skipped(
+        self,
+        mock_config: MagicMock,
+        tmp_path: Path,
+    ) -> None:
+        """quality_score remains None when review is skipped."""
+        from bmad_assist.testarch.handlers import TestReviewHandler
+
+        mock_config.testarch.test_review_on_code_complete = "off"
+        state = State(
+            current_epic=1,
+            current_story="1.1",
+            current_phase=Phase.TEST_REVIEW,
+            atdd_ran_for_story=True,
+        )
+
+        handler = TestReviewHandler(mock_config, tmp_path)
+        result = handler.execute(state)
+
+        assert result.success is True
+        assert result.outputs.get("skipped") is True
+        assert state.test_review_quality_score is None
+
+
+# =============================================================================
+# Task 8.7: Handler docstring reflects new phase position
+# =============================================================================
+
+
+class TestHandlerDocstringUpdated:
+    """Verify handler docstring reflects new position after dev_story."""
+
+    def test_module_docstring_mentions_dev_story(self) -> None:
+        """Module docstring mentions dev_story positioning."""
+        import bmad_assist.testarch.handlers.test_review as mod
+        assert "dev_story" in mod.__doc__
+
+    def test_class_docstring_mentions_dev_story(self) -> None:
+        """Class docstring mentions DEV_STORY positioning."""
+        from bmad_assist.testarch.handlers import TestReviewHandler
+        assert "DEV_STORY" in TestReviewHandler.__doc__
+
+    def test_class_docstring_mentions_condensed_summary(self) -> None:
+        """Class docstring mentions condensed summary output."""
+        from bmad_assist.testarch.handlers import TestReviewHandler
+        assert "condensed" in TestReviewHandler.__doc__.lower()
+
+    def test_class_docstring_mentions_quality_score_to_state(self) -> None:
+        """Class docstring mentions writing quality_score to state."""
+        from bmad_assist.testarch.handlers import TestReviewHandler
+        assert "quality_score" in TestReviewHandler.__doc__

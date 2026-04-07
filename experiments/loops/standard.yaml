@@ -17,6 +17,8 @@ sequence:
     required: true
   - workflow: dev-story
     required: true
+  - workflow: test-review
+    required: true
   - workflow: code-review
     required: true
   - workflow: code-review-synthesis

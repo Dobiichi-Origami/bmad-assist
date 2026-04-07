@@ -576,6 +576,18 @@ class CodeReviewSynthesisHandler(BaseHandler):
                 if (security_findings and security_findings.get("timed_out"))
                 else "",
                 "skip_source_files": skip_source_files,
+                # Test review quality gate signals
+                "test_review_quality_score": state.test_review_quality_score,
+                "test_review_quality_threshold": getattr(
+                    getattr(self.config, "testarch", None),
+                    "test_review_quality_threshold",
+                    70,
+                ),
+                "test_review_block_threshold": getattr(
+                    getattr(self.config, "testarch", None),
+                    "test_review_block_threshold",
+                    50,
+                ),
             },
         )
 
