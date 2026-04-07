@@ -12,38 +12,32 @@ from bmad_assist.core.state import Phase
 
 logger = logging.getLogger(__name__)
 
-# Phases that trigger auto-commit
-# CREATE_STORY: Creates story documentation (commit after creation)
-# DEV_STORY: Modifies code (commit after implementation)
-# CODE_REVIEW_SYNTHESIS: Final story completion (commit after review)
-# RETROSPECTIVE: Epic retrospective report (commit after retrospective)
-# Validation phases excluded - their reports are outputs, not code changes
-COMMIT_PHASES: frozenset[Phase] = frozenset(
-    {
-        Phase.CREATE_STORY,
-        Phase.DEV_STORY,
-        Phase.CODE_REVIEW_SYNTHESIS,
-        Phase.RETROSPECTIVE,
-    }
-)
-
-# Phase to conventional commit type mapping
+# Phase to conventional commit type mapping (all phases)
 PHASE_COMMIT_TYPES: dict[Phase, str] = {
     Phase.CREATE_STORY: "docs",
+    Phase.VALIDATE_STORY: "test",
+    Phase.VALIDATE_STORY_SYNTHESIS: "test",
+    Phase.ATDD: "test",
     Phase.DEV_STORY: "feat",
+    Phase.CODE_REVIEW: "test",
     Phase.CODE_REVIEW_SYNTHESIS: "refactor",
+    Phase.TEST_REVIEW: "test",
+    Phase.TRACE: "test",
+    Phase.TEA_FRAMEWORK: "test",
+    Phase.TEA_CI: "test",
+    Phase.TEA_TEST_DESIGN: "test",
+    Phase.TEA_AUTOMATE: "test",
+    Phase.TEA_NFR_ASSESS: "test",
     Phase.RETROSPECTIVE: "chore",
+    Phase.QA_PLAN_GENERATE: "ci",
+    Phase.QA_PLAN_EXECUTE: "ci",
+    Phase.QA_REMEDIATE: "ci",
 }
 
 
 def is_git_enabled() -> bool:
     """Check if git auto-commit is enabled via environment variable."""
     return os.environ.get("BMAD_GIT_COMMIT") == "1"
-
-
-def should_commit_phase(phase: Phase | None) -> bool:
-    """Check if the given phase should trigger a commit."""
-    return phase in COMMIT_PHASES
 
 
 def _run_git(args: list[str], cwd: Path) -> tuple[int, str, str]:
@@ -94,9 +88,8 @@ def get_modified_files(project_path: Path) -> list[str]:
     if exit_code != 0:
         return []
 
-    # Directories to exclude from auto-commit (generated artifacts)
+    # Directories to exclude from auto-commit (ephemeral artifacts only)
     exclude_prefixes = (
-        "_bmad-output/",
         ".bmad-assist/prompts/",
         ".bmad-assist/cache/",
         ".bmad-assist/debug/",
@@ -171,6 +164,101 @@ def check_for_deleted_story_files(project_path: Path) -> list[str]:
     return deleted_files
 
 
+def _categorize_files(modified_files: list[str]) -> dict[str, list[str]]:
+    """Group modified files by type category.
+
+    Categories:
+    - source: .ts, .tsx, .js, .jsx, .py files
+    - reports: .md files in _bmad-output/ or docs/
+    - tests: files matching test* or spec* patterns
+    - config: everything else
+
+    Args:
+        modified_files: List of file paths relative to repo root.
+
+    Returns:
+        Dict mapping category name to list of file paths.
+
+    """
+    import os.path
+
+    categories: dict[str, list[str]] = {
+        "source": [],
+        "reports": [],
+        "tests": [],
+        "config": [],
+    }
+
+    source_extensions = {".ts", ".tsx", ".js", ".jsx", ".py"}
+
+    for filepath in modified_files:
+        basename = os.path.basename(filepath)
+        _, ext = os.path.splitext(basename)
+
+        # Test files (by name pattern)
+        if basename.startswith(("test", "spec")) or basename.startswith(("test_", "spec_")):
+            categories["tests"].append(filepath)
+        # Reports/docs (.md in _bmad-output/ or docs/)
+        elif ext == ".md" and (filepath.startswith("_bmad-output/") or filepath.startswith("docs/")):
+            categories["reports"].append(filepath)
+        # Source code
+        elif ext in source_extensions:
+            categories["source"].append(filepath)
+        # Everything else
+        else:
+            categories["config"].append(filepath)
+
+    return categories
+
+
+def _summarize_changes(modified_files: list[str]) -> str:
+    """Produce a human-readable summary from categorized files.
+
+    Args:
+        modified_files: List of file paths relative to repo root.
+
+    Returns:
+        Summary string (e.g., "update source code in src/app/, add report").
+
+    """
+    if not modified_files:
+        return "no changes"
+
+    categories = _categorize_files(modified_files)
+    parts: list[str] = []
+
+    if categories["source"]:
+        # Get unique top-level directories for source files
+        dirs = sorted({f.split("/")[0] + "/" for f in categories["source"] if "/" in f})
+        if dirs:
+            parts.append(f"update source code in {', '.join(dirs[:3])}")
+        else:
+            parts.append("update source code")
+
+    if categories["reports"]:
+        count = len(categories["reports"])
+        if count == 1:
+            parts.append("add report")
+        else:
+            parts.append(f"add {count} reports")
+
+    if categories["tests"]:
+        count = len(categories["tests"])
+        if count == 1:
+            parts.append("update test file")
+        else:
+            parts.append(f"update {count} test files")
+
+    if categories["config"]:
+        count = len(categories["config"])
+        if count == 1:
+            parts.append("update configuration")
+        else:
+            parts.append(f"update {count} config files")
+
+    return ", ".join(parts) if parts else "update files"
+
+
 def generate_commit_message(
     phase: Phase,
     story_id: str | None,
@@ -195,9 +283,9 @@ def _generate_conventional_message(
     story_id: str | None,
     modified_files: list[str],
 ) -> str:
-    """Generate conventional commit message.
+    """Generate conventional commit message with dynamic summary.
 
-    Format: <type>(story-X.Y): <description>
+    Format: <type>(<scope>): <phase_name> — <dynamic_summary>
 
     Args:
         phase: The completed phase.
@@ -210,30 +298,48 @@ def _generate_conventional_message(
     """
     commit_type = PHASE_COMMIT_TYPES.get(phase, "chore")
 
-    # RETROSPECTIVE uses epic-based scope; other phases use story-based scope
-    if phase == Phase.RETROSPECTIVE:
-        # Extract epic from story_id (e.g., "22.11" -> "22", "testarch.1" -> "testarch")
+    # Determine scope
+    # Epic-level phases use epic-based scope; story-level phases use story-based scope
+    epic_phases = {
+        Phase.RETROSPECTIVE,
+        Phase.QA_PLAN_GENERATE,
+        Phase.QA_PLAN_EXECUTE,
+        Phase.QA_REMEDIATE,
+        Phase.TEA_FRAMEWORK,
+        Phase.TEA_CI,
+        Phase.TEA_NFR_ASSESS,
+    }
+
+    if phase in epic_phases:
         epic_id = (
             story_id.split(".")[0] if story_id and "." in story_id else (story_id or "unknown")
-        )  # noqa: E501
+        )
         scope = f"epic-{epic_id}"
-        description = f"archive epic {epic_id} retrospective"
     else:
         scope = f"story-{story_id}" if story_id else "bmad"
-        if phase == Phase.CREATE_STORY:
-            description = "create story file"
-        elif phase == Phase.DEV_STORY:
-            description = "implement story"
-        elif phase == Phase.CODE_REVIEW_SYNTHESIS:
-            description = "apply code review changes"
-        else:
-            description = f"complete {phase.value.replace('_', ' ')}"
 
-    message = f"{commit_type}({scope}): {description}"
+    # Dynamic description from changed files
+    phase_label = phase.value.replace("_", " ")
+    summary = _summarize_changes(modified_files)
+    description = f"{phase_label} \u2014 {summary}"
 
-    # Add file count in body if many files changed
+    subject = f"{commit_type}({scope}): {description}"
+
+    # Truncate subject line to 72 characters
+    if len(subject) > 72:
+        subject = subject[:69] + "..."
+
+    message = subject
+
+    # Add commit body with directory grouping when >3 files changed
     if len(modified_files) > 3:
-        message += f"\n\nModified {len(modified_files)} files"
+        dir_counts: dict[str, int] = {}
+        for f in modified_files:
+            top_dir = f.split("/")[0] + "/" if "/" in f else f
+            dir_counts[top_dir] = dir_counts.get(top_dir, 0) + 1
+
+        body_lines = [f"{d}: {c} file{'s' if c > 1 else ''}" for d, c in sorted(dir_counts.items())]
+        message += "\n\n" + ", ".join(body_lines)
 
     return message
 
@@ -515,9 +621,7 @@ def auto_commit_phase(
     if not is_git_enabled():
         return True
 
-    if not should_commit_phase(phase):
-        return True
-
+    # All phases proceed to modified-files check (no whitelist gate)
     # Check for modified files
     modified_files = get_modified_files(project_path)
     if not modified_files:
