@@ -35,6 +35,7 @@ def pytest_collection_modifyitems(config, items):
             reason="Playwright not installed or browsers not available. Run: playwright install"
         )
         for item in items:
-            # Only skip tests in the e2e directory
-            if "/e2e/" in str(item.fspath) or "\\e2e\\" in str(item.fspath):
+            # Only skip Playwright-dependent tests (e2e/dashboard), not mock_loop tests
+            fspath = str(item.fspath)
+            if ("/e2e/" in fspath or "\\e2e\\" in fspath) and "/mock_loop/" not in fspath and "\\mock_loop\\" not in fspath:
                 item.add_marker(skip_playwright)
