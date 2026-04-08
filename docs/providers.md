@@ -11,6 +11,8 @@ All providers implement a common interface:
 
 Providers run CLI tools via subprocess, capturing stdout/stderr for processing. The `opencode-sdk` provider is an exception - it uses the official Python SDK with a persistent HTTP server instead of per-call subprocesses.
 
+All providers support **idle timeout stall detection**: if a provider stops producing stdout output for longer than the configured `idle_timeout`, it is automatically terminated and retried. See [Timeouts configuration](configuration.md#timeouts) for setup.
+
 ---
 
 ## claude-subprocess (Recommended)

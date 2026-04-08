@@ -65,6 +65,31 @@ Project overrides take priority over bundled workflows.
      dev_story: 7200  # 2 hours for large implementations
    ```
 
+## Provider Stall / Hang
+
+**Symptoms:**
+- Provider process runs for a long time with no output
+- Phase eventually fails with total timeout, but the provider was actually idle/stuck
+- Retries hit the same stall on the same provider
+
+**Cause:** Some providers occasionally hang silently — they stop producing stdout output but don't terminate. This wastes the full phase timeout before failing.
+
+**Solution:** Enable stall detection with `idle_timeout` to automatically terminate and retry stalled providers:
+
+```yaml
+timeouts:
+  idle_timeout: 180   # Kill provider if no output for 3 minutes
+  retries: 2          # Retry after stall (or total timeout)
+```
+
+`idle_timeout` monitors stdout gaps independently from the total phase timeout. When no output is seen for the configured duration, the provider is terminated and `ProviderTimeoutError` is raised, triggering a retry (if `retries` is configured) or fallback to the next provider.
+
+- Minimum value: 30 seconds
+- Recommended: 120–300 seconds
+- Default: `None` (disabled)
+
+> **Tip:** Start with `idle_timeout: 180` and lower it if you see frequent legitimate stalls, or raise it if providers sometimes pause during long compilations or test runs.
+
 ## Missing Documentation Error
 
 **Symptoms:**

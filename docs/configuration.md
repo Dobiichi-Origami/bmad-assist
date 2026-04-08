@@ -152,6 +152,7 @@ Per-phase timeout configuration (in seconds):
 timeouts:
   default: 600              # Fallback for phases not listed
   retries: 2                # Retry count (None=no retry, 0=infinite, N=specific)
+  idle_timeout: 180         # Stall detection: kill provider if no stdout for N seconds (None=disabled, min=30)
   create_story: 900
   validate_story: 600
   validate_story_synthesis: 300
@@ -169,6 +170,8 @@ timeouts:
   tea_nfr_assess: 600
   trace: 600
 ```
+
+**Stall detection (`idle_timeout`):** When a provider process stops producing stdout output for longer than `idle_timeout` seconds, it is automatically terminated and retried (if `retries` is configured). This catches providers that hang silently instead of making progress. Default is `None` (disabled). Minimum value is 30 seconds; recommended range is 120–300 seconds depending on your providers and task complexity.
 
 ## External Paths
 

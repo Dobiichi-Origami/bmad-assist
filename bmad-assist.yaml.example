@@ -17,6 +17,7 @@ user_skill_level: expert              # expert to minimize LLM verbosity
 timeouts:
   default: 600                  # 10m
   retries: 2                    # 2 retries
+  # idle_timeout: 180           # 3m stall detection (None=disabled, min=30s)
   create_story: 900             # 15m
   validate_story_synthesis: 900 # 15m
   dev_story: 3600               # 1h
