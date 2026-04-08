@@ -219,6 +219,7 @@ class ClaudeSDKProvider(BaseProvider):
         color_index: int | None = None,
         display_model: str | None = None,
         guard: "ToolCallGuard | None" = None,
+        idle_timeout: int | None = None,
     ) -> str:
         """Execute SDK query asynchronously using ClaudeSDKClient.
 
@@ -405,7 +406,13 @@ class ClaudeSDKProvider(BaseProvider):
             # Re-raise any exception from connect
             connect_task.result()
 
+            # Initialize last message time for idle timeout tracking
+            self._last_message_time = time.perf_counter()
+
             async for message in client.receive_messages():
+                # Track last message time for idle timeout detection
+                self._last_message_time = time.perf_counter()
+
                 # Check if we should exit outer loop
                 if terminated_early:
                     break
@@ -509,6 +516,21 @@ class ClaudeSDKProvider(BaseProvider):
 
         return "".join(response_parts)
 
+    async def _idle_timeout_watchdog(self, idle_timeout: int) -> None:
+        """Async watchdog that raises TimeoutError if no messages received within idle_timeout."""
+        while True:
+            await asyncio.sleep(1.0)
+            elapsed = time.perf_counter() - self._last_message_time
+            if elapsed > idle_timeout:
+                logger.warning(
+                    "SDK idle timeout: no messages for %ds (threshold=%ds)",
+                    int(elapsed),
+                    idle_timeout,
+                )
+                raise ProviderTimeoutError(
+                    f"SDK idle timeout after {idle_timeout}s with no messages"
+                )
+
     async def _invoke_with_cancel(
         self,
         prompt: str,
@@ -521,6 +543,7 @@ class ClaudeSDKProvider(BaseProvider):
         color_index: int | None = None,
         display_model: str | None = None,
         guard: "ToolCallGuard | None" = None,
+        idle_timeout: int | None = None,
     ) -> str:
         """Execute SDK query with cancel_token support.
 
@@ -550,7 +573,8 @@ class ClaudeSDKProvider(BaseProvider):
         """
         sdk_task = asyncio.create_task(
             self._invoke_async(
-                prompt, model, settings, cwd, allowed_tools, color_index, display_model, guard=guard
+                prompt, model, settings, cwd, allowed_tools, color_index, display_model,
+                guard=guard, idle_timeout=idle_timeout,
             )
         )
 
@@ -560,15 +584,23 @@ class ClaudeSDKProvider(BaseProvider):
 
         cancel_task = asyncio.create_task(_wait_for_cancel())
 
+        tasks: set[asyncio.Task[Any]] = {sdk_task, cancel_task}
+        idle_task: asyncio.Task[None] | None = None
+        if idle_timeout is not None:
+            idle_task = asyncio.create_task(self._idle_timeout_watchdog(idle_timeout))
+            tasks.add(idle_task)
+
         try:
             done, pending = await asyncio.wait(
-                {sdk_task, cancel_task},
+                tasks,
                 timeout=timeout,
                 return_when=asyncio.FIRST_COMPLETED,
             )
         except BaseException:
             sdk_task.cancel()
             cancel_task.cancel()
+            if idle_task is not None:
+                idle_task.cancel()
             raise
 
         # Clean up pending tasks
@@ -578,6 +610,10 @@ class ClaudeSDKProvider(BaseProvider):
         # Timeout — neither finished
         if not done:
             raise TimeoutError
+
+        # Idle timeout watchdog completed (with ProviderTimeoutError)
+        if idle_task is not None and idle_task in done and sdk_task not in done:
+            return idle_task.result()  # Will re-raise ProviderTimeoutError
 
         # Cancel was triggered
         if cancel_task in done and sdk_task not in done:
@@ -593,6 +629,7 @@ class ClaudeSDKProvider(BaseProvider):
         *,
         model: str | None = None,
         timeout: int | None = None,
+        idle_timeout: int | None = None,
         settings_file: Path | None = None,
         cwd: Path | None = None,
         disable_tools: bool = False,
@@ -681,6 +718,7 @@ class ClaudeSDKProvider(BaseProvider):
                 prompt,
                 model=model,
                 timeout=timeout,
+                idle_timeout=idle_timeout,
                 settings_file=settings_file,
                 cwd=cwd,
                 disable_tools=disable_tools,
@@ -759,24 +797,51 @@ class ClaudeSDKProvider(BaseProvider):
                         color_index,
                         display_model,
                         guard=guard,
+                        idle_timeout=idle_timeout,
                     )
                 )
             else:
-                response_text = run_async_in_thread(
-                    asyncio.wait_for(
-                        self._invoke_async(
-                            prompt,
-                            effective_model,
-                            validated_settings,
-                            cwd,
-                            allowed_tools,
-                            color_index,
-                            display_model,
-                            guard=guard,
-                        ),
-                        timeout=effective_timeout,
-                    )
+                invoke_coro = self._invoke_async(
+                    prompt,
+                    effective_model,
+                    validated_settings,
+                    cwd,
+                    allowed_tools,
+                    color_index,
+                    display_model,
+                    guard=guard,
+                    idle_timeout=idle_timeout,
                 )
+                if idle_timeout is not None:
+                    # Use custom wait with idle timeout watchdog
+                    async def _run_with_idle_watchdog() -> str:
+                        sdk_task = asyncio.create_task(invoke_coro)
+                        idle_task = asyncio.create_task(
+                            self._idle_timeout_watchdog(idle_timeout)
+                        )
+                        try:
+                            done, pending = await asyncio.wait(
+                                {sdk_task, idle_task},
+                                timeout=effective_timeout,
+                                return_when=asyncio.FIRST_COMPLETED,
+                            )
+                        except BaseException:
+                            sdk_task.cancel()
+                            idle_task.cancel()
+                            raise
+                        for task in pending:
+                            task.cancel()
+                        if not done:
+                            raise TimeoutError
+                        if idle_task in done and sdk_task not in done:
+                            return idle_task.result()  # Re-raises ProviderTimeoutError
+                        return sdk_task.result()
+
+                    response_text = run_async_in_thread(_run_with_idle_watchdog())
+                else:
+                    response_text = run_async_in_thread(
+                        asyncio.wait_for(invoke_coro, timeout=effective_timeout)
+                    )
         except asyncio.CancelledError:
             duration_ms = int((time.perf_counter() - start_time) * 1000)
             logger.info("SDK cancelled after %dms", duration_ms)

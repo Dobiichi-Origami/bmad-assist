@@ -139,10 +139,10 @@ PHASE_TO_STATUS: dict[Phase, ValidStatus] = {
     Phase.TEA_TEST_DESIGN: "in-progress",  # Epic setup phase (dual-level)
     Phase.TEA_AUTOMATE: "in-progress",  # Epic setup phase (after test_design)
     Phase.DEV_STORY: "in-progress",
+    Phase.TEST_REVIEW: "in-progress",  # Runs before code_review; still in dev
     # Review phases: code review in progress
     Phase.CODE_REVIEW: "review",
     Phase.CODE_REVIEW_SYNTHESIS: "review",
-    Phase.TEST_REVIEW: "review",
     Phase.TRACE: "review",  # Traceability review at epic end
     Phase.TEA_NFR_ASSESS: "review",  # NFR assessment at epic end
     # Completion: story done only at retrospective
@@ -155,14 +155,14 @@ PHASE_TO_STATUS: dict[Phase, ValidStatus] = {
 """Mapping from workflow Phase to sprint-status ValidStatus.
 
 Rationale:
-- CREATE_STORY through DEV_STORY → "in-progress" (story being worked on)
-- CODE_REVIEW through TEST_REVIEW → "review" (code under review)
+- CREATE_STORY through TEST_REVIEW → "in-progress" (story being developed;
+  TEST_REVIEW validates test quality before code review begins)
+- CODE_REVIEW and CODE_REVIEW_SYNTHESIS → "review" (code under review)
 - RETROSPECTIVE → "done" (story complete, part of epic retrospective)
 
 The "done" status is only set at RETROSPECTIVE because:
 1. Even after CODE_REVIEW_SYNTHESIS, the story may need fixes
-2. TEST_REVIEW can also require changes
-3. Only at RETROSPECTIVE is the story truly complete
+2. Only at RETROSPECTIVE is the story truly complete
 """
 
 

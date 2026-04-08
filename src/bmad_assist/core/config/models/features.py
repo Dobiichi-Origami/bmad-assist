@@ -303,6 +303,12 @@ class TimeoutsConfig(BaseModel):
         description="Retry provider invocation on timeout (None = skip retry, 0 = infinite, N = specific count)",
         json_schema_extra={"security": "safe", "ui_widget": "number"},
     )
+    idle_timeout: int | None = Field(
+        default=None,
+        ge=30,
+        description="Idle timeout in seconds: max duration with no stdout output before a provider is considered stalled (None = disabled)",
+        json_schema_extra={"security": "safe", "ui_widget": "number", "unit": "s"},
+    )
 
     def get_timeout(self, phase: str) -> int:
         """Get timeout for a specific phase.
@@ -333,6 +339,18 @@ class TimeoutsConfig(BaseModel):
 
         """
         return self.retries
+
+    def get_idle_timeout(self, phase: str) -> int | None:
+        """Get idle timeout for a specific phase.
+
+        Args:
+            phase: Phase name (e.g., 'validate_story', 'code_review').
+
+        Returns:
+            idle_timeout value in seconds (None = disabled).
+
+        """
+        return self.idle_timeout
 
 
 class BenchmarkingConfig(BaseModel):

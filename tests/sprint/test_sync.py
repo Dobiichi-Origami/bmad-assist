@@ -248,9 +248,9 @@ class TestPhaseToStatusMapping:
         """CODE_REVIEW_SYNTHESIS maps to review."""
         assert PHASE_TO_STATUS[Phase.CODE_REVIEW_SYNTHESIS] == "review"
 
-    def test_test_review_maps_to_review(self):
-        """TEST_REVIEW maps to review."""
-        assert PHASE_TO_STATUS[Phase.TEST_REVIEW] == "review"
+    def test_test_review_maps_to_in_progress(self):
+        """TEST_REVIEW maps to in-progress (runs before code_review)."""
+        assert PHASE_TO_STATUS[Phase.TEST_REVIEW] == "in-progress"
 
     def test_retrospective_maps_to_done(self):
         """RETROSPECTIVE maps to done."""

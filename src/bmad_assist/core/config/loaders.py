@@ -549,6 +549,22 @@ def get_phase_retries(config: Config, phase: str) -> int | None:
     return None  # No retry by default for legacy config
 
 
+def get_phase_idle_timeout(config: Config, phase: str) -> int | None:
+    """Get idle timeout for a specific workflow phase.
+
+    Args:
+        config: Application configuration.
+        phase: Phase name (e.g., 'validate_story', 'code_review').
+
+    Returns:
+        Idle timeout in seconds (None = disabled).
+
+    """
+    if config.timeouts is not None:
+        return config.timeouts.get_idle_timeout(phase)
+    return None
+
+
 def reload_config(project_path: Path | None = None) -> Config:
     """Reload configuration singleton without restart.
 

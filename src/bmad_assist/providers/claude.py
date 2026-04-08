@@ -40,6 +40,7 @@ from bmad_assist.providers.base import (
     BaseProvider,
     ExitStatus,
     ProviderResult,
+    StallDetector,
     extract_tool_details,
     format_tag,
     is_full_stream,
@@ -255,6 +256,7 @@ class ClaudeSubprocessProvider(BaseProvider):
         *,
         model: str | None = None,
         timeout: int | None = None,
+        idle_timeout: int | None = None,
         settings_file: Path | None = None,
         cwd: Path | None = None,
         disable_tools: bool = False,
@@ -511,6 +513,8 @@ class ClaudeSubprocessProvider(BaseProvider):
 
                 for line in iter(stream.readline, ""):
                     raw_lines.append(line)
+                    if stall_detector is not None:
+                        stall_detector.update()
                     stripped = line.strip()
                     if not stripped:
                         continue
@@ -649,6 +653,9 @@ class ClaudeSubprocessProvider(BaseProvider):
             # Event signaled by stdout reader when guard triggers
             guard_triggered_event = threading.Event()
 
+            # Stall detector for idle timeout (if configured)
+            stall_detector = StallDetector() if idle_timeout is not None else None
+
             # Start reader threads
             stdout_thread = threading.Thread(
                 target=process_json_stream,
@@ -704,6 +711,48 @@ class ClaudeSubprocessProvider(BaseProvider):
                     self._terminate_process(process)
                     returncode = 0
                     break
+
+                # Check for idle timeout (stall detection)
+                if (
+                    stall_detector is not None
+                    and idle_timeout is not None
+                    and stall_detector.is_stalled(idle_timeout)
+                ):
+                    process.kill()
+                    stdout_thread.join(timeout=1)
+                    stderr_thread.join(timeout=1)
+                    duration_ms = int((time.perf_counter() - start_time) * 1000)
+                    truncated = _truncate_prompt(prompt)
+
+                    partial_result = ProviderResult(
+                        stdout="".join(response_text_parts),
+                        stderr="".join(stderr_chunks),
+                        exit_code=-1,
+                        duration_ms=duration_ms,
+                        model=effective_model,
+                        command=tuple(command),
+                    )
+
+                    logger.warning(
+                        "Provider idle timeout: provider=%s, model=%s, "
+                        "idle_timeout=%ds, duration_ms=%d, prompt=%s",
+                        self.provider_name,
+                        effective_model,
+                        idle_timeout,
+                        duration_ms,
+                        truncated,
+                    )
+
+                    debug_json_logger.close()
+                    if child_pgid is not None:
+                        unregister_child_pgid(child_pgid)
+                    with self._process_lock:
+                        self._current_process = None
+
+                    raise ProviderTimeoutError(
+                        f"Claude CLI idle timeout after {idle_timeout}s with no output: {truncated}",
+                        partial_result=partial_result,
+                    )
 
                 # Check for timeout
                 if time.perf_counter() >= deadline:

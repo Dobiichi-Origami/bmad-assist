@@ -44,6 +44,7 @@ import logging
 import os
 import signal
 import threading
+import time
 from abc import ABC, abstractmethod
 from collections.abc import Callable
 from dataclasses import dataclass
@@ -216,10 +217,34 @@ def is_transient_error(stderr: str, exit_status: "ExitStatus") -> bool:
     return not stderr.strip() and exit_status == ExitStatus.ERROR
 
 
+class StallDetector:
+    """Thread-safe detector for provider output stalls.
+
+    Tracks the timestamp of the last stdout output line. The stream reader
+    thread calls update() on each line, and the poll loop thread calls
+    is_stalled() to check if idle_timeout has been exceeded.
+    """
+
+    def __init__(self) -> None:
+        self._lock = threading.Lock()
+        self._last_output_time: float = time.perf_counter()
+
+    def update(self) -> None:
+        """Record that output was just received. Called by the stream reader thread."""
+        with self._lock:
+            self._last_output_time = time.perf_counter()
+
+    def is_stalled(self, idle_timeout: int) -> bool:
+        """Check if the provider has been idle longer than idle_timeout seconds."""
+        with self._lock:
+            return (time.perf_counter() - self._last_output_time) > idle_timeout
+
+
 def read_stream_lines(
     stream: Any,
     chunks: list[str],
     callback: Callable[[str], None] | None = None,
+    stall_detector: StallDetector | None = None,
 ) -> None:
     """Read lines from stream, accumulating in chunks and optionally calling callback.
 
@@ -230,10 +255,13 @@ def read_stream_lines(
         stream: File-like object with readline() method (e.g., process.stdout).
         chunks: List to append each line to.
         callback: Optional function called with each line (for progress display).
+        stall_detector: Optional StallDetector to update on each line read.
 
     """
     for line in iter(stream.readline, ""):
         chunks.append(line)
+        if stall_detector is not None:
+            stall_detector.update()
         if callback is not None:
             callback(line)
     stream.close()
@@ -245,6 +273,7 @@ def start_stream_reader_threads(
     stderr_chunks: list[str],
     stdout_callback: Callable[[str], None] | None = None,
     stderr_callback: Callable[[str], None] | None = None,
+    stall_detector: StallDetector | None = None,
 ) -> tuple[threading.Thread, threading.Thread]:
     """Start threads for concurrent stdout/stderr reading.
 
@@ -258,6 +287,7 @@ def start_stream_reader_threads(
         stderr_chunks: List to accumulate stderr lines.
         stdout_callback: Optional callback for each stdout line.
         stderr_callback: Optional callback for each stderr line.
+        stall_detector: Optional StallDetector updated on each stdout line.
 
     Returns:
         Tuple of (stdout_thread, stderr_thread). Caller should join() these
@@ -266,7 +296,7 @@ def start_stream_reader_threads(
     """
     stdout_thread = threading.Thread(
         target=read_stream_lines,
-        args=(process.stdout, stdout_chunks, stdout_callback),
+        args=(process.stdout, stdout_chunks, stdout_callback, stall_detector),
     )
     stderr_thread = threading.Thread(
         target=read_stream_lines,
@@ -800,6 +830,7 @@ class BaseProvider(ABC):
         *,
         model: str | None = None,
         timeout: int | None = None,
+        idle_timeout: int | None = None,
         settings_file: Path | None = None,
         cwd: Path | None = None,
         disable_tools: bool = False,
@@ -822,6 +853,9 @@ class BaseProvider(ABC):
             prompt: The prompt text to send to the LLM.
             model: Model identifier to use. If None, uses default_model.
             timeout: Timeout in seconds. If None, uses default from config.
+            idle_timeout: Idle timeout in seconds. If set, the provider will be
+                terminated if no stdout output is received for this duration.
+                If None, idle timeout detection is disabled.
             settings_file: Path to provider settings JSON file.
             disable_tools: If True, disables all tools. Not all providers
                 support this; implementations should ignore if unsupported.

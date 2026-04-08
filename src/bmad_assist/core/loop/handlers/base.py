@@ -30,7 +30,7 @@ from typing import Any
 import yaml
 from jinja2 import Template
 
-from bmad_assist.core.config import Config, get_config, get_phase_retries, get_phase_timeout
+from bmad_assist.core.config import Config, get_config, get_phase_idle_timeout, get_phase_retries, get_phase_timeout
 from bmad_assist.core.config.models.providers import (
     MasterProviderConfig,
     MultiProviderConfig,
@@ -664,6 +664,7 @@ class BaseHandler(ABC):
         display_model = self.get_model()  # For logging (prefers model_name)
         cli_model = self.get_cli_model()  # For actual CLI invocation (always model)
         timeout = get_phase_timeout(self.config, self.phase_name)
+        idle_timeout = get_phase_idle_timeout(self.config, self.phase_name)
 
         # Resolve settings file from provider config (phase_models or global)
         settings_file = None
@@ -759,6 +760,7 @@ class BaseHandler(ABC):
                     model=cli_model,
                     display_model=display_model,
                     timeout=timeout,
+                    idle_timeout=idle_timeout,
                     settings_file=settings_file,
                     cwd=self.project_path,
                     reasoning_effort=reasoning_effort,

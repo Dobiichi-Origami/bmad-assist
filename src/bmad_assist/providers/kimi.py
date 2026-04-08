@@ -52,6 +52,7 @@ from bmad_assist.providers.base import (
     BaseProvider,
     ExitStatus,
     ProviderResult,
+    StallDetector,
     extract_tool_details,
     format_tag,
     is_full_stream,
@@ -442,6 +443,7 @@ class KimiProvider(BaseProvider):
         *,
         model: str | None = None,
         timeout: int | None = None,
+        idle_timeout: int | None = None,
         settings_file: Path | None = None,
         cwd: Path | None = None,
         disable_tools: bool = False,
@@ -620,6 +622,8 @@ class KimiProvider(BaseProvider):
                     """Process kimi-cli stream-json output, extracting text and logging."""
                     for line in iter(stream.readline, ""):
                         raw_lines.append(line)
+                        if stall_detector is not None:
+                            stall_detector.update()
                         stripped = line.strip()
                         if not stripped:
                             continue
@@ -722,6 +726,9 @@ class KimiProvider(BaseProvider):
                     assert guard_kill_event is not None and guard_done_event is not None
                     guard_monitor = start_guard_monitor(process, guard_kill_event, guard_done_event)
 
+                # Stall detector for idle timeout (if configured)
+                stall_detector = StallDetector() if idle_timeout is not None else None
+
                 # Start reader threads
                 stdout_thread = threading.Thread(
                     target=process_json_stream,
@@ -749,45 +756,93 @@ class KimiProvider(BaseProvider):
                     tag = format_tag("WAITING", color_index)
                     write_progress(f"{tag} Streaming response...")
 
-                # Wait for process with timeout
-                try:
-                    returncode = process.wait(timeout=effective_timeout)
-                except TimeoutExpired:
-                    process.kill()
-                    # Clean up guard monitor before raising
-                    if guard_done_event is not None:
-                        guard_done_event.set()
-                    if guard_monitor is not None:
-                        guard_monitor.join(timeout=1.0)
-                    self._cleanup_process(
-                        process, stdout_thread, stderr_thread, timeout_occurred=True
-                    )
-                    duration_ms = int((time.perf_counter() - start_time) * 1000)
-                    truncated = _truncate_prompt(prompt)
+                # Wait for process with timeout and stall detection
+                deadline = time.perf_counter() + effective_timeout
+                returncode = None
+                while returncode is None:
+                    # Check idle timeout (stall detection)
+                    if (
+                        stall_detector is not None
+                        and idle_timeout is not None
+                        and stall_detector.is_stalled(idle_timeout)
+                    ):
+                        process.kill()
+                        stdout_thread.join(timeout=1)
+                        stderr_thread.join(timeout=1)
+                        # Clean up guard monitor before raising
+                        if guard_done_event is not None:
+                            guard_done_event.set()
+                        if guard_monitor is not None:
+                            guard_monitor.join(timeout=1.0)
+                        duration_ms = int((time.perf_counter() - start_time) * 1000)
+                        truncated = _truncate_prompt(prompt)
 
-                    partial_result = ProviderResult(
-                        stdout="".join(response_text_parts),
-                        stderr="".join(stderr_chunks),
-                        exit_code=-1,
-                        duration_ms=duration_ms,
-                        model=effective_model,
-                        command=tuple(command),
-                    )
+                        partial_result = ProviderResult(
+                            stdout="".join(response_text_parts),
+                            stderr="".join(stderr_chunks),
+                            exit_code=-1,
+                            duration_ms=duration_ms,
+                            model=effective_model,
+                            command=tuple(command),
+                        )
 
-                    logger.warning(
-                        "Provider timeout: provider=%s, model=%s, timeout=%ds, "
-                        "duration_ms=%d, prompt=%s",
-                        self.provider_name,
-                        effective_model,
-                        effective_timeout,
-                        duration_ms,
-                        truncated,
-                    )
+                        logger.warning(
+                            "Provider idle timeout: provider=%s, model=%s, "
+                            "idle_timeout=%ds, duration_ms=%d, prompt=%s",
+                            self.provider_name,
+                            effective_model,
+                            idle_timeout,
+                            duration_ms,
+                            truncated,
+                        )
 
-                    raise ProviderTimeoutError(
-                        f"Kimi CLI timeout after {effective_timeout}s: {truncated}",
-                        partial_result=partial_result,
-                    ) from None
+                        raise ProviderTimeoutError(
+                            f"Kimi CLI idle timeout after {idle_timeout}s with no output: {truncated}",
+                            partial_result=partial_result,
+                        )
+
+                    # Check total timeout
+                    if time.perf_counter() >= deadline:
+                        process.kill()
+                        # Clean up guard monitor before raising
+                        if guard_done_event is not None:
+                            guard_done_event.set()
+                        if guard_monitor is not None:
+                            guard_monitor.join(timeout=1.0)
+                        self._cleanup_process(
+                            process, stdout_thread, stderr_thread, timeout_occurred=True
+                        )
+                        duration_ms = int((time.perf_counter() - start_time) * 1000)
+                        truncated = _truncate_prompt(prompt)
+
+                        partial_result = ProviderResult(
+                            stdout="".join(response_text_parts),
+                            stderr="".join(stderr_chunks),
+                            exit_code=-1,
+                            duration_ms=duration_ms,
+                            model=effective_model,
+                            command=tuple(command),
+                        )
+
+                        logger.warning(
+                            "Provider timeout: provider=%s, model=%s, timeout=%ds, "
+                            "duration_ms=%d, prompt=%s",
+                            self.provider_name,
+                            effective_model,
+                            effective_timeout,
+                            duration_ms,
+                            truncated,
+                        )
+
+                        raise ProviderTimeoutError(
+                            f"Kimi CLI timeout after {effective_timeout}s: {truncated}",
+                            partial_result=partial_result,
+                        ) from None
+
+                    try:
+                        returncode = process.wait(timeout=0.5)
+                    except TimeoutExpired:
+                        continue
 
                 # Clean up guard monitor
                 if guard_done_event is not None:

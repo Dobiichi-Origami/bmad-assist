@@ -46,6 +46,7 @@ from bmad_assist.providers.base import (
     BaseProvider,
     ExitStatus,
     ProviderResult,
+    StallDetector,
     extract_tool_details,
     format_tag,
     is_full_stream,
@@ -213,6 +214,7 @@ class AmpProvider(BaseProvider):
         *,
         model: str | None = None,
         timeout: int | None = None,
+        idle_timeout: int | None = None,
         settings_file: Path | None = None,
         cwd: Path | None = None,
         disable_tools: bool = False,
@@ -397,6 +399,9 @@ class AmpProvider(BaseProvider):
 
             start_time = time.perf_counter()
 
+            # Create stall detector for idle timeout tracking
+            stall_detector = StallDetector() if idle_timeout is not None else None
+
             try:
                 # Set up environment
                 env = os.environ.copy()
@@ -436,6 +441,10 @@ class AmpProvider(BaseProvider):
                         stripped = line.strip()
                         if not stripped:
                             continue
+
+                        # Track activity for stall detection
+                        if stall_detector is not None:
+                            stall_detector.update()
 
                         # Log raw JSON immediately (survives crashes)
                         json_logger.append(stripped)
@@ -590,49 +599,85 @@ class AmpProvider(BaseProvider):
                     tag = format_tag("WAITING", color_index)
                     write_progress(f"{tag} Streaming response...")
 
-                # Wait for process with timeout
-                try:
-                    returncode = process.wait(timeout=effective_timeout)
-                except TimeoutExpired:
-                    process.kill()
-                    # Clean up guard monitor before raising
-                    if guard_done_event is not None:
-                        guard_done_event.set()
-                    if guard_monitor is not None:
-                        guard_monitor.join(timeout=1.0)
-                    # Join threads with timeout - should terminate quickly after kill
-                    stdout_thread.join(timeout=2)
-                    stderr_thread.join(timeout=2)
-                    if stdout_thread.is_alive() or stderr_thread.is_alive():
-                        logger.warning(
-                            "Amp CLI: Reader threads did not terminate cleanly after timeout"
+                # Wait for process with polling loop (supports idle timeout)
+                deadline = time.perf_counter() + effective_timeout
+                returncode = None
+                while returncode is None:
+                    # Check idle timeout
+                    if (
+                        stall_detector is not None
+                        and idle_timeout is not None
+                        and stall_detector.is_stalled(idle_timeout)
+                    ):
+                        process.kill()
+                        # Clean up guard monitor before raising
+                        if guard_done_event is not None:
+                            guard_done_event.set()
+                        if guard_monitor is not None:
+                            guard_monitor.join(timeout=1.0)
+                        stdout_thread.join(timeout=2)
+                        stderr_thread.join(timeout=2)
+                        duration_ms = int((time.perf_counter() - start_time) * 1000)
+                        truncated = _truncate_prompt(prompt)
+
+                        partial_result = ProviderResult(
+                            stdout="".join(response_text_parts),
+                            stderr="".join(stderr_chunks),
+                            exit_code=-1,
+                            duration_ms=duration_ms,
+                            model=effective_model,
+                            command=tuple(command),
                         )
-                    duration_ms = int((time.perf_counter() - start_time) * 1000)
-                    truncated = _truncate_prompt(prompt)
 
-                    partial_result = ProviderResult(
-                        stdout="".join(response_text_parts),
-                        stderr="".join(stderr_chunks),
-                        exit_code=-1,
-                        duration_ms=duration_ms,
-                        model=effective_model,
-                        command=tuple(command),
-                    )
+                        raise ProviderTimeoutError(
+                            f"Amp CLI idle timeout after {idle_timeout}s with no output: {truncated}",
+                            partial_result=partial_result,
+                        )
+                    # Check total timeout
+                    if time.perf_counter() >= deadline:
+                        process.kill()
+                        # Clean up guard monitor before raising
+                        if guard_done_event is not None:
+                            guard_done_event.set()
+                        if guard_monitor is not None:
+                            guard_monitor.join(timeout=1.0)
+                        # Join threads with timeout - should terminate quickly after kill
+                        stdout_thread.join(timeout=2)
+                        stderr_thread.join(timeout=2)
+                        if stdout_thread.is_alive() or stderr_thread.is_alive():
+                            logger.warning(
+                                "Amp CLI: Reader threads did not terminate cleanly after timeout"
+                            )
+                        duration_ms = int((time.perf_counter() - start_time) * 1000)
+                        truncated = _truncate_prompt(prompt)
 
-                    logger.warning(
-                        "Provider timeout: provider=%s, mode=%s, timeout=%ds, "
-                        "duration_ms=%d, prompt=%s",
-                        self.provider_name,
-                        effective_model,
-                        effective_timeout,
-                        duration_ms,
-                        truncated,
-                    )
+                        partial_result = ProviderResult(
+                            stdout="".join(response_text_parts),
+                            stderr="".join(stderr_chunks),
+                            exit_code=-1,
+                            duration_ms=duration_ms,
+                            model=effective_model,
+                            command=tuple(command),
+                        )
 
-                    raise ProviderTimeoutError(
-                        f"Amp CLI timeout after {effective_timeout}s: {truncated}",
-                        partial_result=partial_result,
-                    ) from None
+                        logger.warning(
+                            "Provider timeout: provider=%s, mode=%s, timeout=%ds, "
+                            "duration_ms=%d, prompt=%s",
+                            self.provider_name,
+                            effective_model,
+                            effective_timeout,
+                            duration_ms,
+                            truncated,
+                        )
+
+                        raise ProviderTimeoutError(
+                            f"Amp CLI timeout after {effective_timeout}s: {truncated}",
+                            partial_result=partial_result,
+                        ) from None
+                    try:
+                        returncode = process.wait(timeout=0.5)
+                    except TimeoutExpired:
+                        continue
 
                 if guard_done_event is not None:
                     guard_done_event.set()

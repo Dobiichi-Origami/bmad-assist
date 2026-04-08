@@ -51,6 +51,7 @@ from bmad_assist.providers.base import (
     BaseProvider,
     ExitStatus,
     ProviderResult,
+    StallDetector,
     calculate_retry_delay,
     format_tag,
     is_full_stream,
@@ -135,6 +136,7 @@ class CursorAgentProvider(BaseProvider):
         *,
         model: str | None = None,
         timeout: int | None = None,
+        idle_timeout: int | None = None,
         settings_file: Path | None = None,
         cwd: Path | None = None,
         disable_tools: bool = False,
@@ -263,6 +265,9 @@ class CursorAgentProvider(BaseProvider):
                 if cwd is not None:
                     env["PWD"] = str(cwd)
 
+                # Create stall detector for idle timeout tracking
+                stall_detector = StallDetector() if idle_timeout is not None else None
+
                 process = Popen(
                     command,
                     stdin=PIPE,
@@ -283,6 +288,7 @@ class CursorAgentProvider(BaseProvider):
                     stderr_chunks,
                     stdout_callback=_stdout_cb,
                     stderr_callback=_stderr_cb,
+                    stall_detector=stall_detector,
                 )
 
                 # Write prompt to stdin in a separate thread to avoid deadlock
@@ -307,29 +313,62 @@ class CursorAgentProvider(BaseProvider):
                     tag = format_tag("START", color_index)
                     write_progress(f"{tag} Invoking Cursor Agent CLI (model={shown_model})...")
 
-                try:
-                    returncode = process.wait(timeout=effective_timeout)
-                except TimeoutExpired:
-                    process.kill()
-                    stdin_thread.join(timeout=1)
-                    stdout_thread.join(timeout=2)
-                    stderr_thread.join(timeout=2)
-                    duration_ms = int((time.perf_counter() - start_time) * 1000)
-                    truncated = _truncate_prompt(prompt)
+                # Wait for process with polling loop (supports idle timeout)
+                deadline = time.perf_counter() + effective_timeout
+                returncode = None
+                while returncode is None:
+                    # Check idle timeout
+                    if (
+                        stall_detector is not None
+                        and idle_timeout is not None
+                        and stall_detector.is_stalled(idle_timeout)
+                    ):
+                        process.kill()
+                        stdin_thread.join(timeout=1)
+                        stdout_thread.join(timeout=2)
+                        stderr_thread.join(timeout=2)
+                        duration_ms = int((time.perf_counter() - start_time) * 1000)
+                        truncated = _truncate_prompt(prompt)
 
-                    partial_result = ProviderResult(
-                        stdout="".join(stdout_chunks),
-                        stderr="".join(stderr_chunks),
-                        exit_code=-1,
-                        duration_ms=duration_ms,
-                        model=effective_model,
-                        command=original_command,
-                    )
+                        partial_result = ProviderResult(
+                            stdout="".join(stdout_chunks),
+                            stderr="".join(stderr_chunks),
+                            exit_code=-1,
+                            duration_ms=duration_ms,
+                            model=effective_model,
+                            command=original_command,
+                        )
 
-                    raise ProviderTimeoutError(
-                        f"Cursor Agent CLI timeout after {effective_timeout}s: {truncated}",
-                        partial_result=partial_result,
-                    ) from None
+                        raise ProviderTimeoutError(
+                            f"Cursor Agent CLI idle timeout after {idle_timeout}s with no output: {truncated}",
+                            partial_result=partial_result,
+                        )
+                    # Check total timeout
+                    if time.perf_counter() >= deadline:
+                        process.kill()
+                        stdin_thread.join(timeout=1)
+                        stdout_thread.join(timeout=2)
+                        stderr_thread.join(timeout=2)
+                        duration_ms = int((time.perf_counter() - start_time) * 1000)
+                        truncated = _truncate_prompt(prompt)
+
+                        partial_result = ProviderResult(
+                            stdout="".join(stdout_chunks),
+                            stderr="".join(stderr_chunks),
+                            exit_code=-1,
+                            duration_ms=duration_ms,
+                            model=effective_model,
+                            command=original_command,
+                        )
+
+                        raise ProviderTimeoutError(
+                            f"Cursor Agent CLI timeout after {effective_timeout}s: {truncated}",
+                            partial_result=partial_result,
+                        ) from None
+                    try:
+                        returncode = process.wait(timeout=0.5)
+                    except TimeoutExpired:
+                        continue
 
                 stdin_thread.join(timeout=5)
                 stdout_thread.join(timeout=10)

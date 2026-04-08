@@ -48,6 +48,7 @@ from bmad_assist.providers.base import (
     BaseProvider,
     ExitStatus,
     ProviderResult,
+    StallDetector,
     format_tag,
     is_full_stream,
     should_print_progress,
@@ -196,6 +197,7 @@ class CodexProvider(BaseProvider):
         *,
         model: str | None = None,
         timeout: int | None = None,
+        idle_timeout: int | None = None,
         settings_file: Path | None = None,
         cwd: Path | None = None,
         disable_tools: bool = False,
@@ -343,6 +345,9 @@ class CodexProvider(BaseProvider):
 
         start_time = time.perf_counter()
 
+        # Create stall detector for idle timeout tracking
+        stall_detector = StallDetector() if idle_timeout is not None else None
+
         try:
             process = Popen(
                 command,
@@ -367,6 +372,8 @@ class CodexProvider(BaseProvider):
                 nonlocal thread_id
                 for line in iter(stream.readline, ""):
                     raw_lines.append(line)
+                    if stall_detector is not None:
+                        stall_detector.update()
                     stripped = line.strip()
                     if not stripped:
                         continue
@@ -486,40 +493,72 @@ class CodexProvider(BaseProvider):
             )
             stdin_thread.start()
 
-            # Wait for process with timeout
-            try:
-                returncode = process.wait(timeout=effective_timeout)
-            except TimeoutExpired:
-                process.kill()
-                stdin_thread.join(timeout=1)
-                stdout_thread.join(timeout=1)
-                stderr_thread.join(timeout=1)
-                duration_ms = int((time.perf_counter() - start_time) * 1000)
-                truncated = _truncate_prompt(prompt)
+            # Wait for process with polling loop (supports idle timeout)
+            deadline = time.perf_counter() + effective_timeout
+            returncode = None
+            while returncode is None:
+                # Check idle timeout
+                if (
+                    stall_detector is not None
+                    and idle_timeout is not None
+                    and stall_detector.is_stalled(idle_timeout)
+                ):
+                    process.kill()
+                    stdin_thread.join(timeout=1)
+                    stdout_thread.join(timeout=1)
+                    stderr_thread.join(timeout=1)
+                    duration_ms = int((time.perf_counter() - start_time) * 1000)
+                    truncated = _truncate_prompt(prompt)
 
-                partial_result = ProviderResult(
-                    stdout="".join(response_text_parts),
-                    stderr="".join(stderr_chunks),
-                    exit_code=-1,
-                    duration_ms=duration_ms,
-                    model=effective_model,
-                    command=original_command,
-                )
+                    partial_result = ProviderResult(
+                        stdout="".join(response_text_parts),
+                        stderr="".join(stderr_chunks),
+                        exit_code=-1,
+                        duration_ms=duration_ms,
+                        model=effective_model,
+                        command=original_command,
+                    )
 
-                logger.warning(
-                    "Provider timeout: provider=%s, model=%s, timeout=%ds, "
-                    "duration_ms=%d, prompt=%s",
-                    self.provider_name,
-                    effective_model,
-                    effective_timeout,
-                    duration_ms,
-                    truncated,
-                )
+                    raise ProviderTimeoutError(
+                        f"Codex CLI idle timeout after {idle_timeout}s with no output: {truncated}",
+                        partial_result=partial_result,
+                    )
+                # Check total timeout
+                if time.perf_counter() >= deadline:
+                    process.kill()
+                    stdin_thread.join(timeout=1)
+                    stdout_thread.join(timeout=1)
+                    stderr_thread.join(timeout=1)
+                    duration_ms = int((time.perf_counter() - start_time) * 1000)
+                    truncated = _truncate_prompt(prompt)
 
-                raise ProviderTimeoutError(
-                    f"Codex CLI timeout after {effective_timeout}s: {truncated}",
-                    partial_result=partial_result,
-                ) from None
+                    partial_result = ProviderResult(
+                        stdout="".join(response_text_parts),
+                        stderr="".join(stderr_chunks),
+                        exit_code=-1,
+                        duration_ms=duration_ms,
+                        model=effective_model,
+                        command=original_command,
+                    )
+
+                    logger.warning(
+                        "Provider timeout: provider=%s, model=%s, timeout=%ds, "
+                        "duration_ms=%d, prompt=%s",
+                        self.provider_name,
+                        effective_model,
+                        effective_timeout,
+                        duration_ms,
+                        truncated,
+                    )
+
+                    raise ProviderTimeoutError(
+                        f"Codex CLI timeout after {effective_timeout}s: {truncated}",
+                        partial_result=partial_result,
+                    ) from None
+                try:
+                    returncode = process.wait(timeout=0.5)
+                except TimeoutExpired:
+                    continue
 
             # Wait for threads to finish (timeout prevents hang if reader stuck)
             stdin_thread.join(timeout=5)
