@@ -1603,9 +1603,39 @@ def _run_loop_body(
 
                 continue
 
-            # AC4: QA_PLAN_EXECUTE success → handle epic completion
-            # Note: This is the FINAL phase of an epic (after RETROSPECTIVE → QA_PLAN_GENERATE → QA_PLAN_EXECUTE) # noqa: E501
+            # AC4: QA_PLAN_EXECUTE success → check for qa_remediate or handle epic completion
+            # qa_remediate may follow qa_plan_execute in the teardown sequence.
+            # If qa_remediate is configured, advance to it; otherwise complete the epic.
             if current_phase == Phase.QA_PLAN_EXECUTE and result.success:
+                teardown_phases = (
+                    [Phase(p) for p in loop_config.epic_teardown] if loop_config.epic_teardown else []
+                )
+                # Check if qa_remediate follows qa_plan_execute in the teardown sequence
+                next_teardown_phase = None
+                try:
+                    current_idx = teardown_phases.index(current_phase)
+                    if current_idx + 1 < len(teardown_phases):
+                        next_teardown_phase = teardown_phases[current_idx + 1]
+                except ValueError:
+                    pass
+
+                if next_teardown_phase is not None:
+                    # More teardown phases (e.g., qa_remediate) - advance to next one
+                    now = datetime.now(UTC).replace(tzinfo=None)
+                    state = state.model_copy(
+                        update={
+                            "current_phase": next_teardown_phase,
+                            "updated_at": now,
+                        }
+                    )
+                    save_state(state, state_path)
+                    logger.info(
+                        "QA plan execute complete, advancing to next teardown: %s",
+                        next_teardown_phase.name,
+                    )
+                    continue
+
+                # No more teardown phases - handle epic completion
                 # Calculate epic timing before handle_epic_completion modifies state
                 epic_duration_ms = get_epic_duration_ms(state)
                 epic_stories_count = _count_epic_stories(state)
