@@ -1674,7 +1674,7 @@ def _run_loop_body(
                 # in _execute_epic_teardown() called from the CODE_REVIEW_SYNTHESIS block above.
                 # This check should only be reached for unexpected cases.
                 #
-                # Check if this is the last epic_teardown phase (in case get_next_phase
+                # Check if this is an epic_teardown phase (in case get_next_phase
                 # returns None for a phase that's part of teardown but executed separately)
                 teardown_phases = (
                     [Phase(p) for p in loop_config.epic_teardown] if loop_config.epic_teardown else []
@@ -1682,6 +1682,33 @@ def _run_loop_body(
                 is_teardown_phase = current_phase in teardown_phases
 
                 if is_teardown_phase and result.success:
+                    # Check if there are more teardown phases after the current one.
+                    # When resuming mid-teardown, we must continue the teardown sequence
+                    # rather than completing the epic after just one phase.
+                    next_teardown_phase = None
+                    try:
+                        current_idx = teardown_phases.index(current_phase)
+                        if current_idx + 1 < len(teardown_phases):
+                            next_teardown_phase = teardown_phases[current_idx + 1]
+                    except ValueError:
+                        pass
+
+                    if next_teardown_phase is not None:
+                        # More teardown phases to run - advance to next one
+                        now = datetime.now(UTC).replace(tzinfo=None)
+                        state = state.model_copy(
+                            update={
+                                "current_phase": next_teardown_phase,
+                                "updated_at": now,
+                            }
+                        )
+                        save_state(state, state_path)
+                        logger.info(
+                            "Teardown phase %s complete, advancing to next teardown: %s",
+                            current_phase.name,
+                            next_teardown_phase.name,
+                        )
+                        continue
                     # This path handles edge case where a teardown phase is executed
                     # through the main loop (e.g., resumed mid-teardown)
                     logger.info(

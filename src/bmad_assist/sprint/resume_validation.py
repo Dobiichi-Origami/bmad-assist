@@ -261,11 +261,24 @@ def validate_resume_state(
         # Type narrowing: current_epic is guaranteed non-None from here
         current_epic: EpicId = current_state.current_epic
 
-        # CRITICAL: If we're in RETROSPECTIVE phase, don't skip anything.
-        # The loop needs to execute the retrospective - we shouldn't try to
-        # advance past it just because stories are done.
-        if current_state.current_phase == Phase.RETROSPECTIVE:
-            logger.debug("Current phase is RETROSPECTIVE - not skipping, let loop execute it")
+        # CRITICAL: If we're in a phase that runs after all stories are done,
+        # don't skip it. The loop needs to execute these phases - we shouldn't
+        # try to advance past them just because stories/retro are done in sprint-status.
+        # This includes RETROSPECTIVE and all epic_teardown phases (QA, trace, NFR, etc.)
+        # that run after stories complete but before the epic is truly finished.
+        _EPIC_POST_STORY_PHASES = {
+            Phase.RETROSPECTIVE,
+            Phase.QA_PLAN_GENERATE,
+            Phase.QA_PLAN_EXECUTE,
+            Phase.QA_REMEDIATE,
+            Phase.TRACE,
+            Phase.TEA_NFR_ASSESS,
+        }
+        if current_state.current_phase in _EPIC_POST_STORY_PHASES:
+            logger.debug(
+                "Current phase is %s - not skipping, let loop execute it",
+                current_state.current_phase.name,
+            )
             break
 
         # Check if current epic is done in sprint-status (including retrospective)

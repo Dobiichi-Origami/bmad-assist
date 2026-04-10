@@ -628,6 +628,29 @@ def run(
             state_path = get_state_path(loaded_config, project_root=project_path)
             state = load_state(state_path)
 
+            # Bug fix: Ensure the target epic is in epic_list even if all its stories are done.
+            # When --epic + --phase specify an epic_teardown phase, the user explicitly wants
+            # to re-run teardown for a completed epic. Without this, _load_epic_data() excludes
+            # epics with all-done stories, causing run_loop() to skip the epic entirely.
+            if epic is not None and _is_epic_level_phase:
+                resolved_epic = parse_epic_id(epic.strip())
+                if resolved_epic not in epic_list:
+                    # Add the epic to epic_list so run_loop can process it
+                    epic_list.append(resolved_epic)
+                    epic_list.sort(key=epic_sort_key)
+                    logger.info(
+                        "Added epic %s to epic_list for epic-level phase %s (was excluded due to all stories done)",
+                        resolved_epic,
+                        phase_override,
+                    )
+                    # Also ensure stories_by_epic has an entry for this epic
+                    if resolved_epic not in stories_by_epic:
+                        from bmad_assist.bmad import read_project_state
+                        _bmad_path = loaded_config.paths.project_knowledge if hasattr(loaded_config.paths, 'project_knowledge') else project_paths.project_knowledge
+                        _ps = read_project_state(_bmad_path, use_sprint_status=True)
+                        _epic_stories = [s.number for s in _ps.all_stories if s.number.startswith(f"{resolved_epic}.")]
+                        stories_by_epic[resolved_epic] = _epic_stories
+
             # For epic-level phases without --story, ensure we have a valid story
             # in state (use last story from the epic)
             if _is_epic_level_phase and not story and state.current_story is None:
