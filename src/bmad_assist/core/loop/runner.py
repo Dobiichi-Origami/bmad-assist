@@ -1159,7 +1159,37 @@ def _run_loop_body(
                 is_teardown_failure = state.current_phase in teardown_phases
 
                 if is_teardown_failure:
-                    # Teardown phase failure - log warning and advance to next epic
+                    # Check if there are more teardown phases after the current one.
+                    # When resuming mid-teardown, we must continue the teardown sequence
+                    # rather than completing the epic after just one phase failure (per ADR-002).
+                    next_teardown_phase = None
+                    try:
+                        current_idx = teardown_phases.index(state.current_phase)
+                        if current_idx + 1 < len(teardown_phases):
+                            next_teardown_phase = teardown_phases[current_idx + 1]
+                    except ValueError:
+                        pass
+
+                    if next_teardown_phase is not None:
+                        # More teardown phases to run - advance to next one despite failure
+                        logger.warning(
+                            "Teardown phase %s failed for epic %s: %s. Advancing to next teardown: %s",
+                            state.current_phase.name if state.current_phase else "None",
+                            state.current_epic,
+                            result.error,
+                            next_teardown_phase.name,
+                        )
+                        now = datetime.now(UTC).replace(tzinfo=None)
+                        state = state.model_copy(
+                            update={
+                                "current_phase": next_teardown_phase,
+                                "updated_at": now,
+                            }
+                        )
+                        save_state(state, state_path)
+                        continue
+
+                    # Last teardown phase (or not in teardown list) - log warning and advance to next epic
                     logger.warning(
                         "Teardown phase %s failed for epic %s: %s. Continuing to next epic.",
                         state.current_phase.name if state.current_phase else "None",
