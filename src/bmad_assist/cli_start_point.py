@@ -24,7 +24,7 @@ from bmad_assist.cli_utils import (
     console,
 )
 from bmad_assist.core.config import Config
-from bmad_assist.core.epic_lifecycle import EpicLifecycleStatus
+from bmad_assist.core.epic_lifecycle import EpicLifecycleStatus, is_qa_enabled
 from bmad_assist.core.loop.interactive import is_non_interactive
 from bmad_assist.core.state import Phase, get_state_path, load_state, save_state, update_position
 from bmad_assist.core.types import EpicId, parse_epic_id
@@ -278,8 +278,10 @@ def _handle_fully_completed_epic(
     console.print(f"\n[bold green]Epic {epic} is fully completed![/bold green]")
     console.print("  [dim]- All stories done[/dim]")
     console.print("  [dim]- Retrospective done[/dim]")
-    console.print("  [dim]- QA plan generated[/dim]")
-    console.print("  [dim]- QA plan executed[/dim]")
+    if is_qa_enabled():
+        console.print("  [dim]- QA plan generated[/dim]")
+        console.print("  [dim]- QA plan executed[/dim]")
+        console.print("  [dim]- QA remediation done[/dim]")
     console.print("\n[bold](f)[/bold]orce restart  [bold](c)[/bold]ancel: ", end="")
 
     choice = _read_choice(["f", "c"])
@@ -348,8 +350,6 @@ def _interactive_phase_selection(
         typer.Exit: If cancelled.
 
     """
-    from bmad_assist.core.epic_lifecycle import is_qa_enabled
-
     qa_mode = is_qa_enabled()
 
     console.print(f"\n[bold yellow]Epic {epic} - {lifecycle.describe()}[/bold yellow]")
@@ -367,6 +367,10 @@ def _interactive_phase_selection(
             "[green]done[/green]" if lifecycle.qa_plan_executed else "[yellow]pending[/yellow]"
         )
         console.print(f"  [dim]- QA execution: {qa_exec_status}[/dim]")
+        qa_rem_status = (
+            "[green]done[/green]" if lifecycle.qa_remediated else "[yellow]pending[/yellow]"
+        )
+        console.print(f"  [dim]- QA remediation: {qa_rem_status}[/dim]")
 
     # Build options based on what's pending
     options = []
@@ -382,6 +386,9 @@ def _interactive_phase_selection(
         if lifecycle.qa_plan_generated and not lifecycle.qa_plan_executed:
             options.append("[bold](e)[/bold]xecute QA plan")
             valid_choices.append("e")
+        if lifecycle.qa_plan_executed and not lifecycle.qa_remediated:
+            options.append("[bold](m)[/bold]ediate QA issues")
+            valid_choices.append("m")
     options.append("[bold](f)[/bold]orce restart")
     valid_choices.append("f")
     options.append("[bold](c)[/bold]ancel")
@@ -397,6 +404,8 @@ def _interactive_phase_selection(
         target_phase = Phase.QA_PLAN_GENERATE
     elif choice == "e":
         target_phase = Phase.QA_PLAN_EXECUTE
+    elif choice == "m":
+        target_phase = Phase.QA_REMEDIATE
     elif choice == "f":
         story = epic_stories[0]
         _info(f"Force restarting from story {story.number}")

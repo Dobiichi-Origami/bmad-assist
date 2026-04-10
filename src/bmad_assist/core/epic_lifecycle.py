@@ -54,6 +54,7 @@ class EpicLifecycleStatus:
         retro_completed: True if retrospective artifact exists.
         qa_plan_generated: True if QA plan file exists.
         qa_plan_executed: True if QA results file exists.
+        qa_remediated: True if QA remediation report exists.
         next_phase: Recommended next phase based on status.
         last_story: Last story number in epic (for phase positioning).
 
@@ -64,6 +65,7 @@ class EpicLifecycleStatus:
     retro_completed: bool
     qa_plan_generated: bool
     qa_plan_executed: bool
+    qa_remediated: bool
     next_phase: Phase | None
     last_story: str | None
 
@@ -72,14 +74,19 @@ class EpicLifecycleStatus:
         """Check if epic is fully completed (all phases done).
 
         When QA is disabled (default), epic is complete after retrospective.
-        When QA is enabled (--qa flag), epic requires QA phases too.
+        When QA is enabled (--qa flag), epic requires QA phases too,
+        including remediation if configured in the teardown sequence.
         """
         if not self.all_stories_done or not self.retro_completed:
             return False
 
         # QA phases only count if QA is enabled
         if is_qa_enabled():
-            return self.qa_plan_generated and self.qa_plan_executed
+            if not self.qa_plan_generated or not self.qa_plan_executed:
+                return False
+            # qa_remediate only counts if it's in the teardown sequence
+            if _is_qa_remediate_configured() and not self.qa_remediated:
+                return False
 
         # Without --qa flag, epic is complete after retrospective
         return True
@@ -97,6 +104,8 @@ class EpicLifecycleStatus:
                 return "ready for QA plan generation"
             if not self.qa_plan_executed:
                 return "ready for QA plan execution"
+            if _is_qa_remediate_configured() and not self.qa_remediated:
+                return "ready for QA remediation"
 
         return "fully completed"
 
@@ -183,6 +192,34 @@ def _check_qa_results_exist(epic_id: EpicId) -> bool:
     return len(results_files) > 0
 
 
+def _check_qa_remediate_exists(epic_id: EpicId, project_path: Path) -> bool:
+    """Check if QA remediation report exists for epic.
+
+    Args:
+        epic_id: Epic identifier.
+        project_path: Project root directory.
+
+    Returns:
+        True if remediation report file exists.
+
+    """
+    paths = get_paths()
+    qa_artifacts = paths.output_folder / "qa-artifacts"
+    rem_dir = qa_artifacts / "remediation"
+    rem_pattern = f"epic-{epic_id}-remediation-*.md"
+    rem_files = list(rem_dir.glob(rem_pattern))
+    return len(rem_files) > 0
+
+
+def _is_qa_remediate_configured() -> bool:
+    """Check if qa_remediate is in the loop config's epic_teardown sequence."""
+    from bmad_assist.core.config import get_loop_config
+    from bmad_assist.core.state import Phase
+
+    loop_config = get_loop_config()
+    return Phase.QA_REMEDIATE in [Phase(p) for p in loop_config.epic_teardown]
+
+
 def get_epic_lifecycle_status(
     epic_id: EpicId,
     project_state: ProjectState,
@@ -248,10 +285,12 @@ def get_epic_lifecycle_status(
     if qa_enabled:
         qa_plan_done = _check_qa_plan_exists(config, project_path, epic_id)
         qa_exec_done = _check_qa_results_exist(epic_id)
+        qa_remediate_done = _check_qa_remediate_exists(epic_id, project_path)
     else:
         # When QA disabled, mark as done to skip these phases
         qa_plan_done = True
         qa_exec_done = True
+        qa_remediate_done = True
 
     # Determine next phase
     if not retro_done:
@@ -260,15 +299,18 @@ def get_epic_lifecycle_status(
         next_phase = Phase.QA_PLAN_GENERATE
     elif qa_enabled and not qa_exec_done:
         next_phase = Phase.QA_PLAN_EXECUTE
+    elif qa_enabled and _is_qa_remediate_configured() and not qa_remediate_done:
+        next_phase = Phase.QA_REMEDIATE
     else:
         next_phase = None  # Fully completed
 
     logger.debug(
-        "Epic %s lifecycle: retro=%s, qa_plan=%s, qa_exec=%s, qa_enabled=%s, next=%s",
+        "Epic %s lifecycle: retro=%s, qa_plan=%s, qa_exec=%s, qa_remediate=%s, qa_enabled=%s, next=%s",
         epic_id,
         retro_done,
         qa_plan_done,
         qa_exec_done,
+        qa_remediate_done,
         qa_enabled,
         next_phase.value if next_phase else "COMPLETED",
     )
@@ -279,6 +321,7 @@ def get_epic_lifecycle_status(
         retro_completed=retro_done,
         qa_plan_generated=qa_plan_done,
         qa_plan_executed=qa_exec_done,
+        qa_remediated=qa_remediate_done,
         next_phase=next_phase,
         last_story=last_story,
     )
