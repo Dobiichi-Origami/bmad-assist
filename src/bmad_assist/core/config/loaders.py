@@ -2,6 +2,7 @@
 
 import copy
 import logging
+import os
 import random
 from pathlib import Path
 from typing import Any, Literal
@@ -203,6 +204,12 @@ def load_config(config_data: dict[str, Any]) -> Config:
         raise ConfigError(f"config_data must be a dict, got {type(config_data).__name__}")
     try:
         _config = Config.model_validate(config_data)
+        # Apply BMAD_TWIN_ENABLED environment variable override
+        if os.environ.get("BMAD_TWIN_ENABLED") == "1" and not _config.providers.twin.enabled:
+            from bmad_assist.twin.config import TwinProviderConfig
+            twin_override = _config.providers.twin.model_copy(update={"enabled": True})
+            providers_override = _config.providers.model_copy(update={"twin": twin_override})
+            object.__setattr__(_config, "providers", providers_override)
         return _config
     except ValidationError as e:
         _config = None

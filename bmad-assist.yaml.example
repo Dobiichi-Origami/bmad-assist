@@ -41,6 +41,14 @@ providers:
     # model_name: glm-4.5
     # settings: ~/.claude/glm.json
 
+  # Digital Twin provider (disabled by default, enable with --twin flag or enabled: true)
+  # twin:
+  #   provider: claude
+  #   model: opus
+  #   enabled: false              # Default: false. Use --twin CLI flag or set to true
+  #   max_retries: 2              # Max RETRY attempts before exhausting
+  #   retry_exhausted_action: halt  # halt | continue
+
   # Additional providers for multi-provider scenarios
   multi:
     # Gemini providers

@@ -192,7 +192,7 @@ def sample_negative_page_content() -> str:
 @pytest.fixture
 def twin_config() -> TwinProviderConfig:
     """Default TwinProviderConfig (enabled, halt on exhaust)."""
-    return TwinProviderConfig()
+    return TwinProviderConfig(enabled=True)
 
 
 @pytest.fixture
@@ -203,14 +203,14 @@ def disabled_twin_config() -> TwinProviderConfig:
 
 @pytest.fixture
 def halt_on_exhaust_config() -> TwinProviderConfig:
-    """TwinProviderConfig with retry_exhausted_action='halt'."""
-    return TwinProviderConfig(retry_exhausted_action="halt")
+    """TwinProviderConfig with enabled=True and retry_exhausted_action='halt'."""
+    return TwinProviderConfig(enabled=True, retry_exhausted_action="halt")
 
 
 @pytest.fixture
 def continue_on_exhaust_config() -> TwinProviderConfig:
-    """TwinProviderConfig with retry_exhausted_action='continue'."""
-    return TwinProviderConfig(retry_exhausted_action="continue")
+    """TwinProviderConfig with enabled=True and retry_exhausted_action='continue'."""
+    return TwinProviderConfig(enabled=True, retry_exhausted_action="continue")
 
 
 # ---------------------------------------------------------------------------

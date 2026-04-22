@@ -39,7 +39,7 @@ class TwinProviderConfig(BaseModel):
         description="Model identifier for Twin LLM calls",
     )
     enabled: bool = Field(
-        default=True,
+        default=False,
         description="Whether the Digital Twin is active",
     )
     max_retries: int = Field(

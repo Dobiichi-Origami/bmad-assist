@@ -114,7 +114,7 @@ class TestFullSinglePhaseFlow:
         project_path = tmp_path
         wiki_dir = init_wiki(project_path)
         provider = MagicMock()
-        config = TwinProviderConfig()
+        config = TwinProviderConfig(enabled=True)
         twin = Twin(config=config, wiki_dir=wiki_dir, provider=provider)
 
         # --- Step 1: Guide ---
@@ -197,7 +197,7 @@ class TestMultiEpicAccumulation:
         """Wiki pages accumulate evidence and confidence across 3 epics."""
         wiki_dir = init_wiki(tmp_path)
         provider = MagicMock()
-        config = TwinProviderConfig()
+        config = TwinProviderConfig(enabled=True)
         twin = Twin(config=config, wiki_dir=wiki_dir, provider=provider)
 
         # --- Epic 1: create_story → creates an env page ---
@@ -300,7 +300,7 @@ class TestRetryFlow:
         """Drift detected → correction compass → re-execute → reflect(is_retry=True) → continue."""
         wiki_dir = init_wiki(tmp_path)
         provider = MagicMock()
-        config = TwinProviderConfig(max_retries=2, retry_exhausted_action="halt")
+        config = TwinProviderConfig(enabled=True, max_retries=2, retry_exhausted_action="halt")
         twin = Twin(config=config, wiki_dir=wiki_dir, provider=provider)
 
         # --- Guide returns compass ---
@@ -363,7 +363,7 @@ class TestRetryFlow:
         """RETRY keeps failing → retries exhausted → halt."""
         wiki_dir = init_wiki(tmp_path)
         provider = MagicMock()
-        config = TwinProviderConfig(max_retries=2, retry_exhausted_action="halt")
+        config = TwinProviderConfig(enabled=True, max_retries=2, retry_exhausted_action="halt")
         twin = Twin(config=config, wiki_dir=wiki_dir, provider=provider)
 
         # Initial reflect: retry
@@ -420,7 +420,7 @@ class TestRetryFlow:
         """Parse failure during is_retry=True with halt config → degrade to halt."""
         wiki_dir = init_wiki(tmp_path)
         provider = MagicMock()
-        config = TwinProviderConfig(retry_exhausted_action="halt")
+        config = TwinProviderConfig(enabled=True, retry_exhausted_action="halt")
         twin = Twin(config=config, wiki_dir=wiki_dir, provider=provider)
 
         # LLM returns garbage on retry
@@ -447,7 +447,7 @@ class TestHaltDecision:
         """Twin detects architectural problem → halt → runner returns GUARDIAN_HALT."""
         wiki_dir = init_wiki(tmp_path)
         provider = MagicMock()
-        config = TwinProviderConfig()
+        config = TwinProviderConfig(enabled=True)
         twin = Twin(config=config, wiki_dir=wiki_dir, provider=provider)
 
         provider.invoke.return_value = make_yaml_output(
@@ -507,7 +507,7 @@ class TestSprintWikiEvolution:
         """A sprint's worth of phases creates and evolves wiki pages."""
         wiki_dir = init_wiki(tmp_path)
         provider = MagicMock()
-        config = TwinProviderConfig()
+        config = TwinProviderConfig(enabled=True)
         twin = Twin(config=config, wiki_dir=wiki_dir, provider=provider)
 
         # Phase sequence: create_story → dev_story → code_review → qa_remediate
@@ -632,7 +632,7 @@ class TestChallengeModeEpic:
         """After 5 source_epics on a negative page, challenge mode triggers in reflect prompt."""
         wiki_dir = init_wiki(tmp_path)
         provider = MagicMock()
-        config = TwinProviderConfig()
+        config = TwinProviderConfig(enabled=True)
         twin = Twin(config=config, wiki_dir=wiki_dir, provider=provider)
 
         # Create a negative pattern page and apply 5 updates (5 source_epics)
@@ -706,7 +706,7 @@ class TestEvolveLifecycle:
         """EVOLVE replaces content but preserves the original evidence table."""
         wiki_dir = init_wiki(tmp_path)
         provider = MagicMock()
-        config = TwinProviderConfig()
+        config = TwinProviderConfig(enabled=True)
         twin = Twin(config=config, wiki_dir=wiki_dir, provider=provider)
 
         # CREATE the page first
@@ -822,7 +822,7 @@ class TestGuideFallbackFlow:
             "Ensure security scanning runs before deployment. "
             "Check for OWASP Top 10 vulnerabilities."
         )
-        config = TwinProviderConfig()
+        config = TwinProviderConfig(enabled=True)
         twin = Twin(config=config, wiki_dir=wiki_dir, provider=provider)
 
         # "security_review" → phase_type = "security" → no guide-security page
@@ -854,7 +854,7 @@ class TestProviderFailureDegradation:
         wiki_dir = init_wiki(tmp_path)
         provider = MagicMock()
         provider.invoke.side_effect = RuntimeError("API rate limit exceeded")
-        config = TwinProviderConfig()
+        config = TwinProviderConfig(enabled=True)
         twin = Twin(config=config, wiki_dir=wiki_dir, provider=provider)
 
         compass = twin.guide("dev_story")
@@ -865,7 +865,7 @@ class TestProviderFailureDegradation:
         wiki_dir = init_wiki(tmp_path)
         provider = MagicMock()
         provider.invoke.side_effect = RuntimeError("Service unavailable")
-        config = TwinProviderConfig(retry_exhausted_action="continue")
+        config = TwinProviderConfig(enabled=True, retry_exhausted_action="continue")
         twin = Twin(config=config, wiki_dir=wiki_dir, provider=provider)
 
         record = ExecutionRecord(
@@ -880,7 +880,7 @@ class TestProviderFailureDegradation:
     def test_no_provider_raises_runtime_error(self, tmp_path: Path) -> None:
         """Twin with provider=None raises RuntimeError on _invoke_llm."""
         wiki_dir = init_wiki(tmp_path)
-        config = TwinProviderConfig()
+        config = TwinProviderConfig(enabled=True)
         twin = Twin(config=config, wiki_dir=wiki_dir, provider=None)
 
         with pytest.raises(RuntimeError, match="No LLM provider"):

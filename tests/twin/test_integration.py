@@ -48,7 +48,7 @@ class TestGuideFlow:
             "Ensure all acceptance criteria are implemented. "
             "Watch for test.fixme() stubs left from ATDD phase."
         )
-        twin = Twin(config=TwinProviderConfig(), wiki_dir=wiki_dir, provider=provider)
+        twin = Twin(config=TwinProviderConfig(enabled=True), wiki_dir=wiki_dir, provider=provider)
         compass = twin.guide("dev")
         assert compass is not None
         assert "acceptance criteria" in compass.lower()
@@ -67,7 +67,7 @@ class TestGuideFlow:
         rebuild_index(wiki_dir)
         provider = MagicMock()
         provider.invoke.return_value = "Use Vite for builds. Check tsconfig paths."
-        twin = Twin(config=TwinProviderConfig(), wiki_dir=wiki_dir, provider=provider)
+        twin = Twin(config=TwinProviderConfig(enabled=True), wiki_dir=wiki_dir, provider=provider)
         compass = twin.guide("nonexistent_phase_type")
         assert compass is not None
 
@@ -91,7 +91,7 @@ class TestReflectFlow:
         wiki_dir = init_wiki(tmp_path)
         provider = MagicMock()
         provider.invoke.return_value = make_yaml_output(decision="continue", rationale="All good")
-        twin = Twin(config=TwinProviderConfig(), wiki_dir=wiki_dir, provider=provider)
+        twin = Twin(config=TwinProviderConfig(enabled=True), wiki_dir=wiki_dir, provider=provider)
         record = ExecutionRecord(
             phase="dev_story", mission="Build login", llm_output="## Self-Audit\n\n- ACs met",
             self_audit="- ACs met", success=True, duration_ms=5000, error=None,
@@ -110,7 +110,7 @@ class TestReflectFlow:
             evidence="Missing AC coverage",
             correction="Re-implement login handler",
         )
-        twin = Twin(config=TwinProviderConfig(), wiki_dir=wiki_dir, provider=provider)
+        twin = Twin(config=TwinProviderConfig(enabled=True), wiki_dir=wiki_dir, provider=provider)
         record = ExecutionRecord(
             phase="dev_story", mission="Build login", llm_output="## Self-Audit\n\n- Partial",
             self_audit="- Partial", success=True, duration_ms=5000, error=None,
@@ -127,7 +127,7 @@ class TestReflectFlow:
         provider.invoke.return_value = make_yaml_output(
             decision="halt", rationale="Unrecoverable error in build"
         )
-        twin = Twin(config=TwinProviderConfig(), wiki_dir=wiki_dir, provider=provider)
+        twin = Twin(config=TwinProviderConfig(enabled=True), wiki_dir=wiki_dir, provider=provider)
         record = ExecutionRecord(
             phase="dev_story", mission="Build", llm_output="",
             self_audit=None, success=False, duration_ms=1000, error="Build failed",
@@ -155,7 +155,7 @@ class TestReflectFlow:
                 "reason": "New env knowledge",
             }],
         )
-        twin = Twin(config=TwinProviderConfig(), wiki_dir=wiki_dir, provider=provider)
+        twin = Twin(config=TwinProviderConfig(enabled=True), wiki_dir=wiki_dir, provider=provider)
         record = ExecutionRecord(
             phase="dev_story", mission="Build", llm_output="## Self-Audit\n\n- Done",
             self_audit="- Done", success=True, duration_ms=3000, error=None,
@@ -179,7 +179,7 @@ class TestRetryFlow:
         wiki_dir = init_wiki(tmp_path)
         provider = MagicMock()
         provider.invoke.return_value = "garbage output, no yaml here"
-        twin = Twin(config=TwinProviderConfig(), wiki_dir=wiki_dir, provider=provider)
+        twin = Twin(config=TwinProviderConfig(enabled=True), wiki_dir=wiki_dir, provider=provider)
         record = ExecutionRecord(
             phase="dev_story", mission="Build", llm_output="o",
             self_audit=None, success=True, duration_ms=100, error=None,
@@ -192,7 +192,7 @@ class TestRetryFlow:
         wiki_dir = init_wiki(tmp_path)
         provider = MagicMock()
         provider.invoke.return_value = "garbage output"
-        config = TwinProviderConfig(retry_exhausted_action="halt")
+        config = TwinProviderConfig(enabled=True, retry_exhausted_action="halt")
         twin = Twin(config=config, wiki_dir=wiki_dir, provider=provider)
         record = ExecutionRecord(
             phase="dev_story", mission="Build", llm_output="o",
@@ -206,7 +206,7 @@ class TestRetryFlow:
         wiki_dir = init_wiki(tmp_path)
         provider = MagicMock()
         provider.invoke.return_value = "garbage output"
-        config = TwinProviderConfig(retry_exhausted_action="continue")
+        config = TwinProviderConfig(enabled=True, retry_exhausted_action="continue")
         twin = Twin(config=config, wiki_dir=wiki_dir, provider=provider)
         record = ExecutionRecord(
             phase="dev_story", mission="Build", llm_output="o",
@@ -454,7 +454,7 @@ class TestTruncationInReflectFlow:
             return make_yaml_output(decision="continue", rationale="ok")
         provider.invoke = capture_invoke
 
-        twin = Twin(config=TwinProviderConfig(), wiki_dir=wiki_dir, provider=provider)
+        twin = Twin(config=TwinProviderConfig(enabled=True), wiki_dir=wiki_dir, provider=provider)
         long_output = "A" * 600_000  # Very long output
         record = ExecutionRecord(
             phase="dev_story", mission="Build", llm_output=long_output,
@@ -475,7 +475,7 @@ class TestTruncationInReflectFlow:
             return make_yaml_output(decision="continue", rationale="ok")
         provider.invoke = capture_invoke
 
-        twin = Twin(config=TwinProviderConfig(), wiki_dir=wiki_dir, provider=provider)
+        twin = Twin(config=TwinProviderConfig(enabled=True), wiki_dir=wiki_dir, provider=provider)
         long_diff = "B" * 600_000
         record = ExecutionRecord(
             phase="dev_story", mission="Build", llm_output="short output",
@@ -515,7 +515,7 @@ class TestYAMLToleranceInReflectFlow:
             "```"
         )
         provider.invoke.return_value = raw_output
-        twin = Twin(config=TwinProviderConfig(), wiki_dir=wiki_dir, provider=provider)
+        twin = Twin(config=TwinProviderConfig(enabled=True), wiki_dir=wiki_dir, provider=provider)
         record = ExecutionRecord(
             phase="dev_story", mission="Build", llm_output="output",
             self_audit=None, success=True, duration_ms=100, error=None,
@@ -533,7 +533,7 @@ class TestYAMLToleranceInReflectFlow:
             "no yaml here at all",
             "no yaml again",
         ]
-        twin = Twin(config=TwinProviderConfig(), wiki_dir=wiki_dir, provider=provider)
+        twin = Twin(config=TwinProviderConfig(enabled=True), wiki_dir=wiki_dir, provider=provider)
         record = ExecutionRecord(
             phase="dev_story", mission="Build", llm_output="output",
             self_audit=None, success=True, duration_ms=100, error=None,

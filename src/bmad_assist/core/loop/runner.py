@@ -120,9 +120,7 @@ def _resolve_twin_provider(config: Config) -> Any:
     the main execution LLM. Falls back to the master provider if
     Twin-specific provider resolution fails.
     """
-    twin_cfg = config.providers.twin if hasattr(config.providers, 'twin') else None
-    if twin_cfg is None:
-        return None
+    twin_cfg = config.providers.twin
 
     try:
         from bmad_assist.providers import get_provider_instance
@@ -1059,8 +1057,10 @@ def _run_loop_body(
             # AC2: Execute current phase
             # --- Twin Integration: Guide before phase execution ---
             compass: str | None = None
-            twin_config = config.providers.twin if hasattr(config.providers, 'twin') else None
-            if twin_config and twin_config.enabled:
+            twin_config = config.providers.twin
+            if twin_config.enabled:
+                logger.info("Twin enabled (provider=%s, model=%s)",
+                            twin_config.provider, twin_config.model)
                 try:
                     from bmad_assist.twin.twin import Twin
                     from bmad_assist.twin.wiki import init_wiki
@@ -1075,10 +1075,11 @@ def _run_loop_body(
                                     phase_type, len(compass))
                     _twin_instance = twin_instance  # Store for reflect after execution
                 except Exception as e:
-                    logger.warning("Twin guide failed, proceeding without compass: %s", e)
+                    logger.warning("Twin guide failed, proceeding without compass: %s: %s", type(e).__name__, e)
                     compass = None
                     _twin_instance = None
             else:
+                logger.info("Twin disabled")
                 _twin_instance = None
 
             result = execute_phase(state, compass=compass)
@@ -1459,7 +1460,7 @@ def _run_loop_body(
                                 return LoopExitReason.GUARDIAN_HALT
                             # else continue
                 except Exception as e:
-                    logger.warning("Twin reflect failed, continuing: %s", e)
+                    logger.warning("Twin reflect failed, proceeding: %s: %s", type(e).__name__, e)
 
             # Save state BEFORE advancing - current_phase is the phase that just completed
             save_state(state, state_path)

@@ -5,7 +5,7 @@
 The system SHALL define a `TwinProviderConfig` data class with the following fields:
 - `provider`: string, default `"claude"`
 - `model`: string, default `"opus"`
-- `enabled`: boolean, default `True`
+- `enabled`: boolean, default `False`
 - `max_retries`: integer, default `2`
 - `retry_exhausted_action`: literal `"halt"` or `"continue"`, default `"halt"`
 
@@ -18,7 +18,7 @@ The system SHALL add a `twin` section to the existing providers configuration in
 #### Scenario: Default TwinProviderConfig values
 
 WHEN no twin section exists in the providers YAML configuration
-THEN the system SHALL construct a TwinProviderConfig with all default values: provider="claude", model="opus", enabled=True, max_retries=2, retry_exhausted_action="halt"
+THEN the system SHALL construct a TwinProviderConfig with all default values: provider="claude", model="opus", enabled=False, max_retries=2, retry_exhausted_action="halt"
 
 #### Scenario: TwinProviderConfig parsed from YAML
 

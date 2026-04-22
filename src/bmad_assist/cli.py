@@ -342,6 +342,11 @@ def run(
         "--tea",
         help="Enable full TEA (Test Engineering Architect) loop with all phases",
     ),
+    twin: bool = typer.Option(
+        False,
+        "--twin",
+        help="Enable Digital Twin (reflect/guide) for the current run",
+    ),
     no_ipc: bool = typer.Option(
         False,
         "--no-ipc",
@@ -409,6 +414,9 @@ def run(
     if tea:
         os.environ["BMAD_TEA_LOOP"] = "1"
         console.print("[dim]TEA: Full Test Engineering Architect loop enabled[/dim]")
+    if twin:
+        os.environ["BMAD_TWIN_ENABLED"] = "1"
+        console.print("[dim]Twin: Digital Twin enabled[/dim]")
 
     try:
         # Validate project path
