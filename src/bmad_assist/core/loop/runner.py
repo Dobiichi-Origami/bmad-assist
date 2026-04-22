@@ -123,12 +123,8 @@ def _resolve_twin_provider(config: Config) -> Any:
     twin_cfg = config.providers.twin
 
     try:
-        from bmad_assist.providers import get_provider_instance
-        return get_provider_instance(
-            provider_name=twin_cfg.provider,
-            model=twin_cfg.model,
-            config=config,
-        )
+        from bmad_assist.providers import get_provider
+        return get_provider(twin_cfg.provider)
     except Exception:
         # Fallback: return None — Twin._invoke_llm will raise
         return None

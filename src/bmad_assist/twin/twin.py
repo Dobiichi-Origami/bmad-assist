@@ -232,8 +232,8 @@ class Twin:
         if self._provider is None:
             raise RuntimeError("No LLM provider configured for Twin")
 
-        # Use provider's invoke method
-        result = self._provider.invoke(prompt)
+        # Use provider's invoke method with configured model
+        result = self._provider.invoke(prompt, model=self.config.model)
         if hasattr(result, "stdout"):
             return result.stdout
         return str(result)

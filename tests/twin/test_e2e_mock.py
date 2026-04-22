@@ -680,7 +680,7 @@ class TestChallengeModeEpic:
         # Capture the prompt passed to the LLM
         captured_prompts = []
 
-        def capture_and_respond(prompt: str) -> str:
+        def capture_and_respond(prompt: str, **kwargs) -> str:
             captured_prompts.append(prompt)
             return make_yaml_output(decision="continue", rationale="ok")
 
@@ -832,7 +832,7 @@ class TestGuideFallbackFlow:
 
         # Verify the prompt included env/pattern/design pages
         captured_prompts = []
-        def capture(prompt: str) -> str:
+        def capture(prompt: str, **kwargs) -> str:
             captured_prompts.append(prompt)
             return "Security compass"
         provider.invoke = capture

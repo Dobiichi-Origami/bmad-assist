@@ -449,7 +449,7 @@ class TestTruncationInReflectFlow:
         provider = MagicMock()
         # Capture the prompt passed to the LLM
         captured_prompt = []
-        def capture_invoke(prompt: str) -> str:
+        def capture_invoke(prompt: str, **kwargs) -> str:
             captured_prompt.append(prompt)
             return make_yaml_output(decision="continue", rationale="ok")
         provider.invoke = capture_invoke
@@ -470,7 +470,7 @@ class TestTruncationInReflectFlow:
         wiki_dir = init_wiki(tmp_path)
         provider = MagicMock()
         captured_prompt = []
-        def capture_invoke(prompt: str) -> str:
+        def capture_invoke(prompt: str, **kwargs) -> str:
             captured_prompt.append(prompt)
             return make_yaml_output(decision="continue", rationale="ok")
         provider.invoke = capture_invoke
