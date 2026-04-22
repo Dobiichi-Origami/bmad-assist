@@ -125,8 +125,11 @@ def _resolve_twin_provider(config: Config) -> Any:
     try:
         from bmad_assist.providers import get_provider
         return get_provider(twin_cfg.provider)
-    except Exception:
-        # Fallback: return None — Twin._invoke_llm will raise
+    except Exception as e:
+        logger.warning(
+            "Twin provider resolution failed for provider=%s: %s: %s",
+            twin_cfg.provider, type(e).__name__, e,
+        )
         return None
 
 
