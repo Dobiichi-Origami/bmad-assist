@@ -114,6 +114,9 @@ class ClaudeSDKProvider(BaseProvider):
 
     """
 
+    def __init__(self) -> None:
+        self._last_message_time: float = 0.0
+
     @property
     def provider_name(self) -> str:
         """Return unique identifier for this provider.
@@ -520,6 +523,9 @@ class ClaudeSDKProvider(BaseProvider):
         """Async watchdog that raises TimeoutError if no messages received within idle_timeout."""
         while True:
             await asyncio.sleep(1.0)
+            # Skip check if message receiving hasn't started yet
+            if self._last_message_time == 0.0:
+                continue
             elapsed = time.perf_counter() - self._last_message_time
             if elapsed > idle_timeout:
                 logger.warning(
