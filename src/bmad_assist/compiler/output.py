@@ -689,16 +689,18 @@ def generate_output(
     project_root: Path | None = None,
     context_files: dict[str, str] | None = None,
     links_only: bool = False,
+    compass: str | None = None,
 ) -> GeneratedOutput:
     """Generate XML output from compiled workflow.
 
     Transforms the CompiledWorkflow data structure into a well-formed XML string
     following recency-bias ordering principles:
     1. <mission> - task description (least context-dependent)
-    2. <context> - project files with IDs (background -> specific)
-    3. <variables> - resolved variable values (with file_id when matching embedded file)
-    4. <instructions> - filtered execution steps (embedded as raw XML)
-    5. <output-template> - expected output template (most relevant for generation)
+    2. <compass> - Twin guide compass (if provided, after mission)
+    3. <context> - project files with IDs (background -> specific)
+    4. <variables> - resolved variable values (with file_id when matching embedded file)
+    5. <instructions> - filtered execution steps (embedded as raw XML)
+    6. <output-template> - expected output template (most relevant for generation)
 
     IMPORTANT: This function builds XML manually to avoid ElementTree's automatic
     escaping of < > characters. Instructions contain XML tags that must be
@@ -736,6 +738,10 @@ def generate_output(
 
     # 1. Mission section (least context-dependent) - use CDATA, inline
     parts.append(f"<mission>{_wrap_cdata(compiled.mission)}</mission>")
+
+    # 2. Compass section (Twin guide) - after mission, before context
+    if compass is not None:
+        parts.append(f"<compass>{_wrap_cdata(compass)}</compass>")
 
     # 2. Context section (background -> specific) with file IDs
     if context_files is not None:

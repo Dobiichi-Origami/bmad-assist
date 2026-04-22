@@ -141,3 +141,5 @@ class CompilerContext:
     file_contents: dict[str, str] = field(default_factory=dict)
     # Debug options
     links_only: bool = False  # If True, show only file paths in context (no content)
+    # Twin compass injection
+    compass: str | None = None  # Compass string from Twin guide, inserted after <mission>

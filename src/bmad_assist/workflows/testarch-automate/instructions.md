@@ -41,3 +41,18 @@ From `workflow.yaml`, resolve:
 
 Load, read completely, and execute:
 `{project-root}/_bmad/tea/workflows/testarch/automate/steps-c/step-01-preflight-and-context.md`
+
+## Execution Self-Audit
+### Completion Status
+- Primary objective: [one sentence stating what was accomplished]
+- Status: [COMPLETE / PARTIAL / DEFERRED]
+### If PARTIAL or DEFERRED:
+- What remains: [specific list]
+- Justification: [specific reason for each item]
+- What was attempted: [what you tried before deferring]
+
+### Phase-Specific Audit
+- [ ] Test architecture deliverables match framework requirements
+- [ ] All acceptance criteria covered by test cases
+- [ ] Integration points identified and tested
+- [ ] Test infrastructure follows project conventions

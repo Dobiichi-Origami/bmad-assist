@@ -343,6 +343,7 @@ class BaseHandler(ABC):
             cwd=get_original_cwd(),
             resolved_variables=resolved_variables,
             links_only=links_only,
+            compass=getattr(self, "_compass", None),
         )
 
         try:
@@ -868,7 +869,7 @@ class BaseHandler(ABC):
         # Should never reach here, but satisfy type checker
         raise RuntimeError("Unexpected state: no error captured but loop exited")
 
-    def execute(self, state: State) -> PhaseResult:
+    def execute(self, state: State, compass: str | None = None) -> PhaseResult:
         """Execute the handler for the given state.
 
         This is the main entry point called by the dispatch system.
@@ -876,6 +877,7 @@ class BaseHandler(ABC):
 
         Args:
             state: Current loop state.
+            compass: Optional compass string from Twin guide to inject into prompt.
 
         Returns:
             PhaseResult with success/failure and outputs.
@@ -885,6 +887,9 @@ class BaseHandler(ABC):
 
         # Capture start time for timing tracking
         start_time = datetime.now(UTC) if self.track_timing else None
+
+        # Store compass for use in render_prompt
+        self._compass = compass
 
         try:
             # Load config and render prompt

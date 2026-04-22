@@ -317,6 +317,7 @@ class CreateStoryCompiler:
                 project_root=context.project_root,
                 context_files=context_files,
                 links_only=context.links_only,
+                compass=context.compass,
             )
 
             # Step 8: Apply post_process rules using shared utility

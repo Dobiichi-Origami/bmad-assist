@@ -79,6 +79,23 @@
 ```
 {escalation_end}
     </section>
+    <section name="self-audit">
+## Execution Self-Audit
+### Completion Status
+- Primary objective: [one sentence stating what was accomplished]
+- Status: [COMPLETE / PARTIAL / DEFERRED]
+### If PARTIAL or DEFERRED:
+- What remains: [specific list]
+- Justification: [specific reason for each item]
+- What was attempted: [what you tried before deferring]
+
+### Phase-Specific Audit
+- [ ] Each issue FIXED/SKIPPED/ESCALATED with explicit reason
+- [ ] Escalation justified (not just convenience)
+- [ ] Fix verified by tests
+- [ ] Regression check done
+- [ ] Safety cap respected
+    </section>
   </output_format>
 
   {fixed_files_section}

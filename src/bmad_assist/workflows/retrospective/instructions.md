@@ -1420,6 +1420,27 @@ Charlie (Senior Dev): "Time to knock out that prep work."
 
 </step>
 
+<step n="final" goal="Execution Self-Audit">
+<critical>DO NOT SKIP THIS STEP - You MUST complete the self-audit before finishing</critical>
+<action>Review your output against the mission and produce the self-audit section</action>
+<output>
+## Execution Self-Audit
+### Completion Status
+- Primary objective: [one sentence stating what was accomplished]
+- Status: [COMPLETE / PARTIAL / DEFERRED]
+### If PARTIAL or DEFERRED:
+- What remains: [specific list]
+- Justification: [specific reason for each item]
+- What was attempted: [what you tried before deferring]
+
+### Phase-Specific Audit
+- [ ] Findings specific and actionable (not generic platitudes)
+- [ ] Recommendations reference specific code or patterns
+- [ ] Both positive and negative patterns captured
+- [ ] Report complete with all required sections
+</output>
+</step>
+
 </workflow>
 
 <facilitation-guidelines>

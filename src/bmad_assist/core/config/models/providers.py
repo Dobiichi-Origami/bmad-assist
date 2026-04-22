@@ -7,6 +7,7 @@ from typing import TYPE_CHECKING
 from pydantic import BaseModel, ConfigDict, Field
 
 from bmad_assist.core.exceptions import ConfigError
+from bmad_assist.twin.config import TwinProviderConfig
 
 if TYPE_CHECKING:
     from bmad_assist.core.config.models.main import Config
@@ -239,12 +240,13 @@ class HelperProviderConfig(BaseModel):
 class ProviderConfig(BaseModel):
     """Provider configuration section.
 
-    Contains configuration for Master, Multi, and Helper LLM providers.
+    Contains configuration for Master, Multi, Helper, and Twin LLM providers.
 
     Attributes:
         master: Configuration for the Master LLM provider.
         multi: List of Multi LLM validator configurations.
         helper: Configuration for the Helper LLM provider (metrics extraction, summarization, etc.).
+        twin: Configuration for the Digital Twin provider (reflect/guide).
 
     """
 
@@ -253,6 +255,7 @@ class ProviderConfig(BaseModel):
     master: MasterProviderConfig
     multi: list[MultiProviderConfig] = Field(default_factory=list)
     helper: HelperProviderConfig = Field(default_factory=HelperProviderConfig)
+    twin: "TwinProviderConfig" = Field(default_factory=lambda: TwinProviderConfig())
 
 
 # Type alias for phase_models config section

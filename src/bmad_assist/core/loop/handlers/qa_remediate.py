@@ -341,7 +341,7 @@ class QaRemediateHandler(BaseHandler):
                 "issues_escalated": issues_escalated,
                 "files_modified": files_modified,
                 "retest_pass_rate": final_pass_rate if final_pass_rate is not None else 0.0,
-            })
+            }, response=result.stdout if 'result' in dir() and hasattr(result, 'stdout') else None)
 
         except Exception as e:
             logger.error("QA remediation failed for epic %s: %s", epic_id, e, exc_info=True)

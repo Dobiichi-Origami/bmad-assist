@@ -113,6 +113,29 @@ _EFFECTIVE_CONFIG_TEMP_SUFFIX = ".tmp"
 _REDACTED_VALUE = "***REDACTED***"
 
 
+def _resolve_twin_provider(config: Config) -> Any:
+    """Resolve the LLM provider for Twin reflect/guide calls.
+
+    Uses the Twin's own provider/model configuration, independent of
+    the main execution LLM. Falls back to the master provider if
+    Twin-specific provider resolution fails.
+    """
+    twin_cfg = config.providers.twin if hasattr(config.providers, 'twin') else None
+    if twin_cfg is None:
+        return None
+
+    try:
+        from bmad_assist.providers import get_provider_instance
+        return get_provider_instance(
+            provider_name=twin_cfg.provider,
+            model=twin_cfg.model,
+            config=config,
+        )
+    except Exception:
+        # Fallback: return None — Twin._invoke_llm will raise
+        return None
+
+
 def _get_dangerous_field_paths(
     model: type,
     prefix: str = "",
@@ -1034,7 +1057,31 @@ def _run_loop_body(
                     logger.warning("Failed to save run log at phase start: %s", e)
 
             # AC2: Execute current phase
-            result = execute_phase(state)
+            # --- Twin Integration: Guide before phase execution ---
+            compass: str | None = None
+            twin_config = config.providers.twin if hasattr(config.providers, 'twin') else None
+            if twin_config and twin_config.enabled:
+                try:
+                    from bmad_assist.twin.twin import Twin
+                    from bmad_assist.twin.wiki import init_wiki
+                    wiki_dir = init_wiki(project_path)
+                    # Resolve Twin provider
+                    twin_provider = _resolve_twin_provider(config)
+                    twin_instance = Twin(config=twin_config, wiki_dir=wiki_dir, provider=twin_provider)
+                    phase_type = state.current_phase.value if state.current_phase else ""
+                    compass = twin_instance.guide(phase_type)
+                    if compass:
+                        logger.info("Twin guide produced compass for phase %s (%d chars)",
+                                    phase_type, len(compass))
+                    _twin_instance = twin_instance  # Store for reflect after execution
+                except Exception as e:
+                    logger.warning("Twin guide failed, proceeding without compass: %s", e)
+                    compass = None
+                    _twin_instance = None
+            else:
+                _twin_instance = None
+
+            result = execute_phase(state, compass=compass)
 
             # Immediate stop check after phase execution (subprocess may have been killed)
             if _should_stop(cancel_ctx):
@@ -1285,6 +1332,134 @@ def _run_loop_body(
             # NOTE: This saves on EVERY successful iteration for maximum crash resilience (NFR1).
             # Performance cost: ~N atomic writes per story (N = phases executed).
             # Optimization deferred until profiling shows I/O is bottleneck.
+
+            # --- Twin Integration: Reflect after phase execution ---
+            if _twin_instance is not None and result.success:
+                try:
+                    from bmad_assist.twin.execution_record import build_execution_record
+                    from bmad_assist.twin.twin import apply_page_updates
+
+                    epic_id = state.current_epic
+                    phase_name = state.current_phase.value if state.current_phase else ""
+                    mission = result.outputs.get("response", "")
+                    llm_output = result.outputs.get("response", "")
+                    duration_ms = result.outputs.get("duration_ms", 0)
+
+                    record = build_execution_record(
+                        phase=phase_name,
+                        mission=mission,
+                        llm_output=llm_output,
+                        success=result.success,
+                        duration_ms=duration_ms if isinstance(duration_ms, int) else 0,
+                        error=result.error,
+                        phase_outputs=result.outputs,
+                        project_path=project_path,
+                    )
+
+                    twin_result = _twin_instance.reflect(
+                        record, is_retry=False, epic_id=epic_id,
+                    )
+
+                    # Apply page updates
+                    if twin_result.page_updates:
+                        apply_page_updates(
+                            twin_result.page_updates,
+                            _twin_instance.wiki_dir,
+                            epic_id=epic_id or "",
+                        )
+
+                    # Handle Twin decision
+                    if twin_result.decision == "halt":
+                        logger.warning("Twin HALT: %s", twin_result.rationale)
+                        return LoopExitReason.GUARDIAN_HALT
+                    elif twin_result.decision == "retry":
+                        # RETRY logic: git stash → re-execute with correction compass
+                        retry_count = 0
+                        max_retries = _twin_instance.config.max_retries
+                        retry_exhausted_action = _twin_instance.config.retry_exhausted_action
+                        original_compass = compass
+
+                        while retry_count < max_retries:
+                            # Git stash to restore working directory
+                            try:
+                                import subprocess
+                                subprocess.run(
+                                    ["git", "stash"],
+                                    cwd=str(project_path),
+                                    capture_output=True,
+                                    timeout=30,
+                                )
+                            except Exception as e:
+                                logger.warning("Git stash failed before RETRY: %s", e)
+
+                            # Format correction compass
+                            correction = ""
+                            if twin_result.drift_assessment and twin_result.drift_assessment.correction:
+                                correction = twin_result.drift_assessment.correction
+
+                            retry_count += 1
+                            correction_compass = f"[RETRY retry={retry_count}] {correction}"
+                            # Append correction to original compass (not replace)
+                            full_compass = (original_compass or "") + "\n" + correction_compass
+
+                            logger.info(
+                                "Twin RETRY %d/%d for phase %s: %s",
+                                retry_count, max_retries, phase_name, correction[:100],
+                            )
+
+                            # Re-execute phase with correction compass
+                            retry_result = execute_phase(state, compass=full_compass)
+
+                            if not retry_result.success:
+                                logger.warning("RETRY phase execution failed: %s", retry_result.error)
+                                break
+
+                            # Reflect on retry result
+                            retry_record = build_execution_record(
+                                phase=phase_name,
+                                mission=mission,
+                                llm_output=retry_result.outputs.get("response", ""),
+                                success=retry_result.success,
+                                duration_ms=retry_result.outputs.get("duration_ms", 0) if isinstance(retry_result.outputs.get("duration_ms", 0), int) else 0,
+                                error=retry_result.error,
+                                phase_outputs=retry_result.outputs,
+                                project_path=project_path,
+                            )
+
+                            retry_twin_result = _twin_instance.reflect(
+                                retry_record, is_retry=True, epic_id=epic_id,
+                            )
+
+                            if retry_twin_result.page_updates:
+                                apply_page_updates(
+                                    retry_twin_result.page_updates,
+                                    _twin_instance.wiki_dir,
+                                    epic_id=epic_id or "",
+                                )
+
+                            if retry_twin_result.decision == "continue":
+                                logger.info("Twin RETRY successful after %d attempts", retry_count)
+                                result = retry_result
+                                break
+                            elif retry_twin_result.decision == "halt":
+                                logger.warning("Twin HALT after RETRY: %s", retry_twin_result.rationale)
+                                return LoopExitReason.GUARDIAN_HALT
+                            elif retry_twin_result.decision == "retry":
+                                twin_result = retry_twin_result
+                                if retry_twin_result.drift_assessment and retry_twin_result.drift_assessment.correction:
+                                    correction = retry_twin_result.drift_assessment.correction
+                                continue
+                        else:
+                            # Retries exhausted
+                            logger.error(
+                                "Twin RETRY exhausted (%d/%d): %s",
+                                retry_count, max_retries, twin_result.rationale,
+                            )
+                            if retry_exhausted_action == "halt":
+                                return LoopExitReason.GUARDIAN_HALT
+                            # else continue
+                except Exception as e:
+                    logger.warning("Twin reflect failed, continuing: %s", e)
 
             # Save state BEFORE advancing - current_phase is the phase that just completed
             save_state(state, state_path)

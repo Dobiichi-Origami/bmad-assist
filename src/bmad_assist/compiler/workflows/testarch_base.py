@@ -278,6 +278,7 @@ class TestarchTriModalCompiler:
                 project_root=context.project_root,
                 context_files=context_files,
                 links_only=context.links_only,
+                compass=context.compass,
             )
 
             # Apply post_process rules if patch exists

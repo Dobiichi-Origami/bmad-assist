@@ -165,7 +165,7 @@ def get_handler(phase: Phase) -> PhaseHandler:
 # =============================================================================
 
 
-def execute_phase(state: State) -> PhaseResult:
+def execute_phase(state: State, compass: str | None = None) -> PhaseResult:
     """Execute a single workflow phase and return its result.
 
     Dispatches to the correct handler via get_handler() based on state.current_phase,
@@ -176,6 +176,7 @@ def execute_phase(state: State) -> PhaseResult:
 
     Args:
         state: Current loop state containing current_phase and other context.
+        compass: Optional compass string from Twin guide to inject into prompt.
 
     Returns:
         PhaseResult with success status, handler outputs, and duration_ms.
@@ -228,7 +229,11 @@ def execute_phase(state: State) -> PhaseResult:
 
     try:
         # AC1, AC4: Call handler (may raise Exception)
-        handler_result = handler(state)
+        # Pass compass to handler if provided
+        if compass is not None:
+            handler_result = handler(state, compass=compass)
+        else:
+            handler_result = handler(state)
 
         # Defensive: validate handler returned correct type
         if not isinstance(handler_result, PhaseResult):

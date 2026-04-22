@@ -133,11 +133,13 @@ class PhaseResult:
     outputs: dict[str, Any] = field(default_factory=dict)
 
     @classmethod
-    def ok(cls, outputs: dict[str, Any] | None = None) -> "PhaseResult":
+    def ok(cls, outputs: dict[str, Any] | None = None, *, response: str | None = None, **kwargs: Any) -> "PhaseResult":
         """Create a successful phase result.
 
         Args:
             outputs: Optional phase-specific outputs. Defaults to empty dict.
+            response: Optional primary LLM response content.
+            **kwargs: Additional outputs to merge.
 
         Returns:
             PhaseResult with success=True and provided outputs.
@@ -148,7 +150,11 @@ class PhaseResult:
             True
 
         """
-        return cls(success=True, outputs=dict(outputs) if outputs is not None else {})
+        merged = dict(outputs) if outputs is not None else {}
+        if response is not None:
+            merged["response"] = response
+        merged.update(kwargs)
+        return cls(success=True, outputs=merged)
 
     @classmethod
     def fail(cls, error: str) -> "PhaseResult":

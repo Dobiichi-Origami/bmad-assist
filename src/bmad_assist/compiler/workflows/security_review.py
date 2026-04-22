@@ -186,6 +186,7 @@ class SecurityReviewCompiler:
             compiled,
             project_root=context.project_root,
             context_files=context_files,
+            compass=context.compass,
         )
 
         # Step 12: Apply post-process if patch exists
