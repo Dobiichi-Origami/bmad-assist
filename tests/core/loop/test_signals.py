@@ -399,7 +399,7 @@ class TestRunLoopShutdownIntegration:
             )
             with patch("bmad_assist.core.loop.runner.execute_phase") as mock_exec:
 
-                def side_effect(state):
+                def side_effect(state, compass=None):
                     # Set shutdown after first phase
                     request_shutdown(signal.SIGINT)
                     return PhaseResult.ok()
@@ -427,7 +427,7 @@ class TestRunLoopShutdownIntegration:
             )
             with patch("bmad_assist.core.loop.runner.execute_phase") as mock_exec:
 
-                def side_effect(state):
+                def side_effect(state, compass=None):
                     request_shutdown(signal.SIGTERM)
                     return PhaseResult.ok()
 
@@ -454,7 +454,7 @@ class TestRunLoopShutdownIntegration:
             )
             with patch("bmad_assist.core.loop.runner.execute_phase") as mock_exec:
 
-                def side_effect(state):
+                def side_effect(state, compass=None):
                     request_shutdown(signal.SIGINT)
                     return PhaseResult.ok()
 
@@ -485,7 +485,7 @@ class TestRunLoopShutdownIntegration:
                     current_phase=Phase.CREATE_STORY,
                 )
                 with patch("bmad_assist.core.loop.runner.execute_phase") as mock_exec:
-                    mock_exec.side_effect = lambda state: (
+                    mock_exec.side_effect = lambda state, compass=None: (
                         request_shutdown(signal.SIGINT),
                         PhaseResult.ok(),
                     )[1]
@@ -546,7 +546,7 @@ class TestRunLoopShutdownIntegration:
             with patch("bmad_assist.core.loop.runner.execute_phase") as mock_exec:
                 call_count = [0]
 
-                def side_effect(state):
+                def side_effect(state, compass=None):
                     call_count[0] += 1
                     if call_count[0] == 1:
                         # First call - shutdown was cleared so we should continue
@@ -670,7 +670,7 @@ class TestEdgeCases:
             )
             with patch("bmad_assist.core.loop.runner.execute_phase") as mock_exec:
                 # Set shutdown immediately in first phase
-                mock_exec.side_effect = lambda state: (
+                mock_exec.side_effect = lambda state, compass=None: (
                     request_shutdown(signal.SIGINT),
                     PhaseResult.ok(),
                 )[1]

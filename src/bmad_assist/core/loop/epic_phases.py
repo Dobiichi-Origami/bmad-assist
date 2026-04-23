@@ -11,8 +11,9 @@ from __future__ import annotations
 import logging
 from datetime import UTC, datetime
 from pathlib import Path
+from typing import TYPE_CHECKING, Literal
 
-from bmad_assist.core.loop.dispatch import execute_phase
+from bmad_assist.core.loop.dispatch import execute_phase, resolve_twin_provider
 from bmad_assist.core.loop.helpers import _print_phase_banner
 from bmad_assist.core.loop.notifications import _dispatch_event
 from bmad_assist.core.loop.types import PhaseResult
@@ -24,6 +25,9 @@ from bmad_assist.core.state import (
     start_phase_timing,
 )
 
+if TYPE_CHECKING:
+    from bmad_assist.core.config import Config
+
 logger = logging.getLogger(__name__)
 
 __all__ = ["_execute_epic_setup", "_execute_epic_teardown"]
@@ -32,10 +36,177 @@ __all__ = ["_execute_epic_setup", "_execute_epic_teardown"]
 LoopState = State
 
 
+def _execute_phase_with_twin(
+    state: LoopState,
+    config: Config,
+    project_path: Path,
+    retry_exhausted_action: Literal["halt", "continue"] = "halt",
+) -> PhaseResult:
+    """Execute a phase with Twin guide → execute → reflect → retry cycle.
+
+    Encapsulates the Twin orchestration for epic setup/teardown phases.
+    Unlike the main loop, this does NOT perform git stash on retry
+    (setup phases typically don't write files; teardown changes are final).
+
+    Args:
+        state: Current loop state.
+        config: Application configuration (for Twin provider access).
+        project_path: Project root directory.
+        retry_exhausted_action: "halt" → return failed result on retry exhaustion,
+            "continue" → return the last retry result.
+
+    Returns:
+        PhaseResult from the final execution attempt.
+
+    """
+    # --- Twin Guide ---
+    compass: str | None = None
+    _twin_instance = None
+    twin_config = config.providers.twin
+
+    if twin_config.enabled:
+        try:
+            from bmad_assist.twin.twin import Twin
+            from bmad_assist.twin.wiki import init_wiki
+
+            wiki_dir = init_wiki(project_path)
+            twin_provider = resolve_twin_provider(config)
+            twin_instance = Twin(config=twin_config, wiki_dir=wiki_dir, provider=twin_provider)
+            phase_type = state.current_phase.value if state.current_phase else ""
+            compass = twin_instance.guide(phase_type)
+            if compass:
+                logger.info("Twin guide produced compass for phase %s (%d chars)",
+                            phase_type, len(compass))
+            _twin_instance = twin_instance
+        except Exception as e:
+            logger.warning("Twin guide failed, proceeding without compass: %s: %s", type(e).__name__, e)
+            compass = None
+            _twin_instance = None
+
+    # --- Execute Phase ---
+    result = execute_phase(state, compass=compass)
+
+    # If phase failed or Twin is disabled, return immediately
+    if not result.success or _twin_instance is None:
+        return result
+
+    # --- Twin Reflect ---
+    try:
+        from bmad_assist.twin.execution_record import build_execution_record
+        from bmad_assist.twin.twin import apply_page_updates
+
+        epic_id = state.current_epic
+        phase_name = state.current_phase.value if state.current_phase else ""
+        mission = result.outputs.get("response", "")
+        duration_ms = result.outputs.get("duration_ms", 0)
+
+        record = build_execution_record(
+            phase=phase_name,
+            mission=mission,
+            llm_output=result.outputs.get("response", ""),
+            success=result.success,
+            duration_ms=duration_ms if isinstance(duration_ms, int) else 0,
+            error=result.error,
+            phase_outputs=result.outputs,
+            project_path=project_path,
+        )
+
+        twin_result = _twin_instance.reflect(record, is_retry=False, epic_id=epic_id)
+
+        # Apply page updates
+        if twin_result.page_updates:
+            apply_page_updates(
+                twin_result.page_updates,
+                _twin_instance.wiki_dir,
+                epic_id=epic_id or "",
+            )
+
+        # Handle Twin decision
+        if twin_result.decision == "halt":
+            # Mark the result so callers can distinguish Twin halt from phase failure
+            logger.warning("Twin HALT: %s", twin_result.rationale)
+            return PhaseResult.fail(f"Twin HALT: {twin_result.rationale}")
+        elif twin_result.decision == "retry":
+            retry_count = 0
+            max_retries = _twin_instance.config.max_retries
+            original_compass = compass
+
+            while retry_count < max_retries:
+                # Format correction compass
+                correction = ""
+                if twin_result.drift_assessment and twin_result.drift_assessment.correction:
+                    correction = twin_result.drift_assessment.correction
+
+                retry_count += 1
+                correction_compass = f"[RETRY retry={retry_count}] {correction}"
+                # Append correction to original compass (not replace)
+                full_compass = (original_compass or "") + "\n" + correction_compass
+
+                logger.info(
+                    "Twin RETRY %d/%d for phase %s: %s",
+                    retry_count, max_retries, phase_name, correction[:100],
+                )
+
+                # Re-execute phase with correction compass (no git stash for setup/teardown)
+                retry_result = execute_phase(state, compass=full_compass)
+
+                if not retry_result.success:
+                    logger.warning("RETRY phase execution failed: %s", retry_result.error)
+                    break
+
+                # Reflect on retry result
+                retry_record = build_execution_record(
+                    phase=phase_name,
+                    mission=mission,
+                    llm_output=retry_result.outputs.get("response", ""),
+                    success=retry_result.success,
+                    duration_ms=retry_result.outputs.get("duration_ms", 0) if isinstance(retry_result.outputs.get("duration_ms", 0), int) else 0,
+                    error=retry_result.error,
+                    phase_outputs=retry_result.outputs,
+                    project_path=project_path,
+                )
+
+                retry_twin_result = _twin_instance.reflect(
+                    retry_record, is_retry=True, epic_id=epic_id,
+                )
+
+                if retry_twin_result.page_updates:
+                    apply_page_updates(
+                        retry_twin_result.page_updates,
+                        _twin_instance.wiki_dir,
+                        epic_id=epic_id or "",
+                    )
+
+                if retry_twin_result.decision == "continue":
+                    logger.info("Twin RETRY successful after %d attempts", retry_count)
+                    result = retry_result
+                    break
+                elif retry_twin_result.decision == "halt":
+                    logger.warning("Twin HALT after RETRY: %s", retry_twin_result.rationale)
+                    return PhaseResult.fail(f"Twin HALT after RETRY: {retry_twin_result.rationale}")
+                elif retry_twin_result.decision == "retry":
+                    twin_result = retry_twin_result
+                    continue
+            else:
+                # Retries exhausted
+                logger.error(
+                    "Twin RETRY exhausted (%d/%d): %s",
+                    retry_count, max_retries, twin_result.rationale,
+                )
+                if retry_exhausted_action == "halt":
+                    return PhaseResult.fail(f"Twin RETRY exhausted: {twin_result.rationale}")
+                # else continue with the last retry result
+    except Exception as e:
+        logger.warning("Twin reflect failed, proceeding: %s: %s", type(e).__name__, e)
+
+    return result
+
+
 def _execute_epic_setup(
     state: LoopState,
     state_path: Path,
     project_path: Path,
+    config: Config,
 ) -> tuple[LoopState, bool]:
     """Execute epic setup phases before first story.
 
@@ -50,6 +221,7 @@ def _execute_epic_setup(
         state: Current loop state.
         state_path: Path to state file for persistence.
         project_path: Project root directory.
+        config: Application configuration (for Twin provider access).
 
     Returns:
         Tuple of (updated_state, success).
@@ -93,9 +265,11 @@ def _execute_epic_setup(
             story=None,  # Epic setup phases don't have a story
         )
 
-        # Execute the setup phase
+        # Execute the setup phase with Twin orchestration
         logger.info("Executing epic setup phase: %s", phase_name)
-        result = execute_phase(state)
+        result = _execute_phase_with_twin(
+            state, config, project_path, retry_exhausted_action="halt",
+        )
 
         # Dispatch phase_completed notification (regardless of success/failure)
         phase_duration = get_phase_duration_ms(state)
@@ -108,7 +282,7 @@ def _execute_epic_setup(
         )
 
         if not result.success:
-            # Setup failure - halt the loop (per ADR-001)
+            # Setup failure or Twin halt - halt the loop (per ADR-001)
             logger.error(
                 "Epic setup phase %s failed for epic %s: %s",
                 phase_name,
@@ -145,6 +319,7 @@ def _execute_epic_teardown(
     state: LoopState,
     state_path: Path,
     project_path: Path,
+    config: Config,
 ) -> tuple[LoopState, PhaseResult | None]:
     """Execute epic teardown phases after last story.
 
@@ -156,6 +331,7 @@ def _execute_epic_teardown(
         state: Current loop state after last story's CODE_REVIEW_SYNTHESIS.
         state_path: Path to state file for persistence.
         project_path: Project root directory.
+        config: Application configuration (for Twin provider access).
 
     Returns:
         Tuple of (updated_state, last_result).
@@ -201,9 +377,11 @@ def _execute_epic_teardown(
             story=None,  # Epic teardown phases don't have a story
         )
 
-        # Execute the teardown phase
+        # Execute the teardown phase with Twin orchestration
         logger.info("Executing epic teardown phase: %s", phase_name)
-        result = execute_phase(state)
+        result = _execute_phase_with_twin(
+            state, config, project_path, retry_exhausted_action="continue",
+        )
         last_result = result
 
         # Dispatch phase_completed notification (regardless of success/failure)
@@ -217,13 +395,23 @@ def _execute_epic_teardown(
         )
 
         if not result.success:
-            # Teardown failure - log warning and CONTINUE (per ADR-002)
-            logger.warning(
-                "Epic teardown phase %s failed for epic %s: %s. Continuing to next teardown phase.",
-                phase_name,
-                state.current_epic,
-                result.error,
-            )
+            # Teardown failure or Twin halt - log warning and CONTINUE (per ADR-002)
+            # Twin halt in teardown is also treated as a warning, not a loop-stopper
+            if result.error and "Twin HALT" in result.error:
+                logger.warning(
+                    "Twin HALT during epic teardown phase %s for epic %s: %s. "
+                    "Continuing to next teardown phase (ADR-002 takes priority).",
+                    phase_name,
+                    state.current_epic,
+                    result.error,
+                )
+            else:
+                logger.warning(
+                    "Epic teardown phase %s failed for epic %s: %s. Continuing to next teardown phase.",
+                    phase_name,
+                    state.current_epic,
+                    result.error,
+                )
             # Still save state even on failure
             save_state(state, state_path)
             continue

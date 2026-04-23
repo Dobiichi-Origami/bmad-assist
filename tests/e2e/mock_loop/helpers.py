@@ -40,10 +40,13 @@ class ScriptedPhaseExecutor:
         self.invocations: list[tuple[EpicId | None, str | None, Phase | None]] = []
         # Optional callback invoked on every call (for signal injection etc.)
         self._on_call = on_call
+        # Track compass values passed to each invocation
+        self.compass_values: list[str | None] = []
 
     def __call__(self, state: State, compass: str | None = None) -> PhaseResult:
         key = (state.current_epic, state.current_story, state.current_phase)
         self.invocations.append(key)
+        self.compass_values.append(compass)
 
         if self._on_call is not None:
             self._on_call(state, self)
@@ -55,6 +58,11 @@ class ScriptedPhaseExecutor:
     def phases_called(self) -> list[Phase | None]:
         """Return just the phase component of every invocation."""
         return [inv[2] for inv in self.invocations]
+
+    @property
+    def compass_history(self) -> list[str | None]:
+        """Return the compass value passed to each invocation."""
+        return list(self.compass_values)
 
 
 # =============================================================================
@@ -138,6 +146,7 @@ def create_e2e_config(
     *,
     qa_enabled: bool = False,
     tea_enabled: bool = False,
+    twin_enabled: bool = False,
 ) -> Config:
     """Create a minimal Config suitable for mock E2E tests.
 
@@ -162,6 +171,13 @@ def create_e2e_config(
 
     if qa_enabled:
         config_data["qa"] = {
+            "enabled": True,
+        }
+
+    if twin_enabled:
+        config_data["providers"]["twin"] = {
+            "provider": "claude",
+            "model": "mock",
             "enabled": True,
         }
 

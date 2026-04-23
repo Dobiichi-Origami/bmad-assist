@@ -336,7 +336,7 @@ class TestRunLoopPhaseExecution:
         state = State(current_epic=1, current_story="1.1", current_phase=Phase.CREATE_STORY)
         executed_phases = []
 
-        def track_execute(s):
+        def track_execute(s, compass=None):
             executed_phases.append(s.current_phase)
             if len(executed_phases) >= 3:
                 # Stop after a few phases by returning to epic completion
@@ -386,7 +386,7 @@ class TestRunLoopStoryCompletion:
 
         call_count = [0]
 
-        def controlled_execute(s):
+        def controlled_execute(s, compass=None):
             call_count[0] += 1
             if call_count[0] > 3:
                 # Prevent infinite loop
@@ -507,7 +507,7 @@ class TestRunLoopEpicCompletion:
 
         call_count = [0]
 
-        def controlled_execute(s):
+        def controlled_execute(s, compass=None):
             call_count[0] += 1
             if call_count[0] > 3:
                 raise StateError("Breaking loop for test")
@@ -599,7 +599,7 @@ class TestRunLoopFailureHandling:
 
         call_count = [0]
 
-        def failing_execute(s):
+        def failing_execute(s, compass=None):
             call_count[0] += 1
             if call_count[0] == 1:
                 return PhaseResult.fail("Test failure")
@@ -653,7 +653,7 @@ class TestRunLoopFailureHandling:
 
         call_count = [0]
 
-        def failing_then_success(s):
+        def failing_then_success(s, compass=None):
             call_count[0] += 1
             if call_count[0] == 1:
                 return PhaseResult.fail("Error")
@@ -752,7 +752,7 @@ class TestRunLoopFailureHandling:
         # Use a callable for side_effect to handle arbitrary number of calls after the first failure
         call_count = [0]
 
-        def execute_phase_side_effect(state):
+        def execute_phase_side_effect(state, compass=None):
             call_count[0] += 1
             if call_count[0] == 1:
                 return PhaseResult.fail("Retrospective analysis failed")
@@ -847,7 +847,7 @@ class TestRunLoopPhaseAdvancement:
 
         phases_seen = []
 
-        def track_execute(s):
+        def track_execute(s, compass=None):
             phases_seen.append(s.current_phase)
             if len(phases_seen) >= 4:
                 raise StateError("Breaking loop")
@@ -888,7 +888,7 @@ class TestRunLoopIntegrationFull:
 
         phases_executed = []
 
-        def track_execute(s):
+        def track_execute(s, compass=None):
             phases_executed.append(s.current_phase)
             return PhaseResult.ok()
 
@@ -966,7 +966,7 @@ class TestPhaseTimingReset:
         def track_start_phase_timing(s):
             call_sequence.append("start_timing")
 
-        def track_execute_phase(s):
+        def track_execute_phase(s, compass=None):
             execute_count[0] += 1
             call_sequence.append(f"execute_{execute_count[0]}")
             return PhaseResult.ok()

@@ -45,7 +45,7 @@ from bmad_assist.core.loop.dashboard_events import (
     parse_story_id,
     story_id_from_parts,
 )
-from bmad_assist.core.loop.dispatch import execute_phase, init_handlers
+from bmad_assist.core.loop.dispatch import execute_phase, init_handlers, resolve_twin_provider
 
 # Extracted helper modules
 from bmad_assist.core.loop.epic_phases import (
@@ -111,26 +111,6 @@ logger = logging.getLogger(__name__)
 # Temp file suffix for atomic writes
 _EFFECTIVE_CONFIG_TEMP_SUFFIX = ".tmp"
 _REDACTED_VALUE = "***REDACTED***"
-
-
-def _resolve_twin_provider(config: Config) -> Any:
-    """Resolve the LLM provider for Twin reflect/guide calls.
-
-    Uses the Twin's own provider/model configuration, independent of
-    the main execution LLM. Falls back to the master provider if
-    Twin-specific provider resolution fails.
-    """
-    twin_cfg = config.providers.twin
-
-    try:
-        from bmad_assist.providers import get_provider
-        return get_provider(twin_cfg.provider)
-    except Exception as e:
-        logger.warning(
-            "Twin provider resolution failed for provider=%s: %s: %s",
-            twin_cfg.provider, type(e).__name__, e,
-        )
-        return None
 
 
 def _get_dangerous_field_paths(
@@ -955,7 +935,7 @@ def _run_loop_body(
             saved_phase = state.current_phase
             logger.info("Running epic setup phases for epic %s", state.current_epic)
             state, setup_success = _execute_epic_setup(
-                state, state_path, project_path,
+                state, state_path, project_path, config,
             )
         if not setup_success:
             logger.error("Epic setup failed, halting loop")
@@ -1065,7 +1045,7 @@ def _run_loop_body(
                     from bmad_assist.twin.wiki import init_wiki
                     wiki_dir = init_wiki(project_path)
                     # Resolve Twin provider
-                    twin_provider = _resolve_twin_provider(config)
+                    twin_provider = resolve_twin_provider(config)
                     twin_instance = Twin(config=twin_config, wiki_dir=wiki_dir, provider=twin_provider)
                     phase_type = state.current_phase.value if state.current_phase else ""
                     compass = twin_instance.guide(phase_type)
@@ -1652,7 +1632,7 @@ def _run_loop_body(
                     # Run all epic teardown phases (retrospective, qa_plan_*, etc.)
                     logger.info("Epic %s stories complete, running teardown phases", state.current_epic)
                     state, _teardown_result = _execute_epic_teardown(
-                        new_state, state_path, project_path
+                        new_state, state_path, project_path, config,
                     )
                     _invoke_sprint_sync(state, project_path)
 

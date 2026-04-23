@@ -9,7 +9,7 @@ import logging
 import time
 from dataclasses import replace
 from pathlib import Path
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 from bmad_assist.core.exceptions import StateError
 from bmad_assist.core.loop.types import PhaseHandler, PhaseResult
@@ -25,8 +25,10 @@ logger = logging.getLogger(__name__)
 
 __all__ = [
     "init_handlers",
+    "reset_handlers",
     "get_handler",
     "execute_phase",
+    "resolve_twin_provider",
 ]
 
 
@@ -106,22 +108,16 @@ def init_handlers(config: "Config", project_path: Path) -> None:
 
     logger.debug("Initialized %d phase handlers", len(_handler_instances))
 
-    # Validate that all phases in LoopConfig have handlers
-    loop_config = get_loop_config()
-    all_config_phases = loop_config.epic_setup + loop_config.story + loop_config.epic_teardown
 
-    for phase_name in all_config_phases:
-        try:
-            phase = Phase(phase_name)
-        except ValueError:
-            raise ConfigError(
-                f"Invalid phase '{phase_name}' in loop config - not a valid Phase enum value"
-            ) from None
+def reset_handlers() -> None:
+    """Reset handler registry to uninitialized state.
 
-        if phase not in _handler_instances:
-            raise ConfigError(f"Phase '{phase_name}' in loop config has no registered handler")
-
-    logger.debug("Validated loop config: all %d phases have handlers", len(all_config_phases))
+    Used by test fixtures to ensure test isolation, since init_handlers()
+    mutates module-level state that persists across test runs.
+    """
+    global _handler_instances, _handlers_initialized
+    _handler_instances = {}
+    _handlers_initialized = False
 
 
 def get_handler(phase: Phase) -> PhaseHandler:
@@ -271,3 +267,33 @@ def execute_phase(state: State, compass: str | None = None) -> PhaseResult:
     # AC1, AC5: Create NEW PhaseResult with duration_ms merged into outputs
     new_outputs = {**handler_result.outputs, "duration_ms": duration_ms}
     return replace(handler_result, outputs=new_outputs)
+
+
+# =============================================================================
+# Twin Provider Resolution
+# =============================================================================
+
+
+def resolve_twin_provider(config: "Config") -> Any:
+    """Resolve the LLM provider for Twin reflect/guide calls.
+
+    Uses the Twin's own provider/model configuration, independent of
+    the main execution LLM. Falls back to None if provider resolution fails.
+
+    Args:
+        config: Application configuration with provider settings.
+
+    Returns:
+        Provider instance or None if resolution fails.
+    """
+    twin_cfg = config.providers.twin
+
+    try:
+        from bmad_assist.providers import get_provider
+        return get_provider(twin_cfg.provider)
+    except Exception as e:
+        logger.warning(
+            "Twin provider resolution failed for provider=%s: %s: %s",
+            twin_cfg.provider, type(e).__name__, e,
+        )
+        return None

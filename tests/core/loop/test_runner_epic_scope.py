@@ -52,7 +52,7 @@ class TestEpicSetup:
         # Track phase execution order
         executed_phases: list[str] = []
 
-        def mock_execute_phase(state: State) -> PhaseResult:
+        def mock_execute_phase(state: State, compass: str | None = None) -> PhaseResult:
             phase_name = state.current_phase.name if state.current_phase else "None"
             executed_phases.append(phase_name)
             return PhaseResult.ok()
@@ -136,7 +136,7 @@ class TestEpicSetup:
 
         executed_phases: list[str] = []
 
-        def mock_execute_phase(state: State) -> PhaseResult:
+        def mock_execute_phase(state: State, compass: str | None = None) -> PhaseResult:
             phase_name = state.current_phase.name if state.current_phase else "None"
             executed_phases.append(phase_name)
             return PhaseResult.ok()
@@ -203,7 +203,7 @@ class TestEpicSetup:
 
         initial_state = State()
 
-        def mock_execute_phase(state: State) -> PhaseResult:
+        def mock_execute_phase(state: State, compass: str | None = None) -> PhaseResult:
             if state.current_phase == Phase.ATDD:
                 return PhaseResult.fail("Setup failed - test harness error")
             return PhaseResult.ok()
@@ -250,7 +250,7 @@ class TestEpicSetup:
         initial_state = State()
         executed_phases: list[str] = []
 
-        def mock_execute_phase(state: State) -> PhaseResult:
+        def mock_execute_phase(state: State, compass: str | None = None) -> PhaseResult:
             phase_name = state.current_phase.name if state.current_phase else "None"
             executed_phases.append(phase_name)
             return PhaseResult.ok()
@@ -332,7 +332,7 @@ class TestEpicTeardown:
 
         executed_phases: list[str] = []
 
-        def mock_execute_phase(state: State) -> PhaseResult:
+        def mock_execute_phase(state: State, compass: str | None = None) -> PhaseResult:
             phase_name = state.current_phase.name if state.current_phase else "None"
             executed_phases.append(phase_name)
             return PhaseResult.ok()
@@ -406,7 +406,7 @@ class TestEpicTeardown:
 
         executed_phases: list[str] = []
 
-        def mock_execute_phase(state: State) -> PhaseResult:
+        def mock_execute_phase(state: State, compass: str | None = None) -> PhaseResult:
             phase_name = state.current_phase.name if state.current_phase else "None"
             executed_phases.append(phase_name)
             return PhaseResult.ok()
@@ -483,7 +483,7 @@ class TestEpicTeardown:
             epic_setup_complete=True,
         )
 
-        def mock_execute_phase(state: State) -> PhaseResult:
+        def mock_execute_phase(state: State, compass: str | None = None) -> PhaseResult:
             if state.current_phase == Phase.RETROSPECTIVE:
                 return PhaseResult.fail("Retrospective generation failed")
             return PhaseResult.ok()
@@ -555,7 +555,7 @@ class TestEpicTeardown:
         executed_phases: list[str] = []
         epic_completion_calls: list[int] = []
 
-        def mock_execute_phase(state: State) -> PhaseResult:
+        def mock_execute_phase(state: State, compass: str | None = None) -> PhaseResult:
             phase_name = state.current_phase.name if state.current_phase else "None"
             executed_phases.append(phase_name)
             if state.current_phase == Phase.RETROSPECTIVE and state.current_epic == 1:
@@ -699,7 +699,11 @@ class TestFullEpicCycle:
     def test_epic_setup_complete_flag_is_set(self, tmp_path: Path) -> None:
         """epic_setup_complete=True after successful setup."""
         from bmad_assist.core.loop.runner import _execute_epic_setup
-        from bmad_assist.core.config import LoopConfig
+        from bmad_assist.core.config import LoopConfig, load_config
+
+        config = load_config({
+            "providers": {"master": {"provider": "claude", "model": "opus_4"}},
+        })
 
         state = State(
             current_epic=1,
@@ -718,12 +722,14 @@ class TestFullEpicCycle:
 
         with patch(
             "bmad_assist.core.loop.runner.execute_phase", return_value=PhaseResult.ok()
+        ), patch(
+            "bmad_assist.core.loop.epic_phases.execute_phase", return_value=PhaseResult.ok()
         ):
             with patch("bmad_assist.core.loop.runner.save_state"), patch("bmad_assist.core.loop.epic_phases.save_state"):
                 with patch(
                     "bmad_assist.core.config.get_loop_config", return_value=test_loop_config
                 ):
-                    new_state, success = _execute_epic_setup(state, state_path, tmp_path)
+                    new_state, success = _execute_epic_setup(state, state_path, tmp_path, config)
 
         assert success is True
         assert new_state.epic_setup_complete is True
