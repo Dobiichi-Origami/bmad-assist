@@ -26,6 +26,8 @@ class TwinProviderConfig(BaseModel):
         max_retries: Maximum RETRY attempts before exhausting.
         retry_exhausted_action: What to do when retries are exhausted.
             "halt" stops the loop; "continue" proceeds to next phase.
+        audit_extract_model: Model for LLM-based self-audit extraction.
+            None falls back to the main model.
     """
 
     model_config = ConfigDict(frozen=True)
@@ -49,4 +51,8 @@ class TwinProviderConfig(BaseModel):
     retry_exhausted_action: Literal["halt", "continue"] = Field(
         default="halt",
         description='Action when retries exhausted: "halt" or "continue"',
+    )
+    audit_extract_model: str | None = Field(
+        default=None,
+        description="Model for LLM-based self-audit extraction; None falls back to model",
     )

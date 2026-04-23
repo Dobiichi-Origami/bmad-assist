@@ -48,6 +48,7 @@ providers:
   #   enabled: false              # Default: false. Use --twin CLI flag or set to true
   #   max_retries: 2              # Max RETRY attempts before exhausting
   #   retry_exhausted_action: halt  # halt | continue
+  #   audit_extract_model: haiku    # Model for self-audit extraction (None = use main model)
 
   # Additional providers for multi-provider scenarios
   multi:

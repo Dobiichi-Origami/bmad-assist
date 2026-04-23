@@ -16,7 +16,7 @@ from pydantic import BaseModel, Field, model_validator
 
 from bmad_assist.twin.config import TwinProviderConfig
 from bmad_assist.twin.execution_record import ExecutionRecord
-from bmad_assist.twin.prompts import build_guide_prompt, build_reflect_prompt
+from bmad_assist.twin.prompts import build_extract_self_audit_prompt, build_guide_prompt, build_reflect_prompt
 from bmad_assist.twin.wiki import (
     append_evidence_row,
     apply_section_patches,
@@ -169,6 +169,11 @@ class Twin:
         # Load wiki context (Strategy D)
         index_content, guide_content = load_guide_page(self.wiki_dir, record.phase)
 
+        # Resolve self_audit: if regex failed, try LLM extraction
+        self_audit = record.self_audit
+        if self_audit is None and record.llm_output:
+            self_audit = self._extract_self_audit_llm(record.llm_output)
+
         # Prepare LLM output with smart truncation
         prepared_output = prepare_llm_output(record.llm_output)
         prepared_diff = prepare_llm_output(record.files_diff) if record.files_diff else ""
@@ -181,7 +186,7 @@ class Twin:
             duration_ms=record.duration_ms,
             error=record.error,
             files_modified=record.files_modified,
-            self_audit=record.self_audit,
+            self_audit=self_audit,
             index_content=index_content,
             guide_content=guide_content,
             is_retry=is_retry,
@@ -198,6 +203,56 @@ class Twin:
 
         # Call LLM with retry on parse failure
         return self._reflect_with_retry(full_prompt, is_retry, epic_id)
+
+    def _extract_self_audit_llm(self, llm_output: str) -> str | None:
+        """Use LLM to semantically extract a self-audit section from raw output.
+
+        Called when regex-based format_self_audit() returns None.
+        Returns extracted content, or None on any failure.
+
+        Args:
+            llm_output: The raw LLM output to scan.
+
+        Returns:
+            Extracted self-audit content, or None.
+        """
+        if not llm_output:
+            return None
+
+        try:
+            # Apply smart truncation for very large outputs
+            truncated = prepare_llm_output(llm_output)
+
+            prompt = build_extract_self_audit_prompt(truncated)
+            model = self.config.audit_extract_model or self.config.model
+            raw = self._provider.invoke(prompt, model=model)
+            if hasattr(raw, "stdout"):
+                raw = raw.stdout
+            raw = str(raw)
+
+            # Parse YAML from extraction output
+            yaml_str = extract_yaml_block(raw)
+            if yaml_str is None:
+                logger.warning("Self-audit extraction: no YAML block found")
+                return None
+
+            yaml_str = fix_content_block_scalars(yaml_str)
+            data = yaml.safe_load(yaml_str)
+            if not isinstance(data, dict):
+                logger.warning("Self-audit extraction: YAML is not a dict")
+                return None
+
+            found = data.get("found", False)
+            content = data.get("content", "")
+
+            if not found or not content:
+                return None
+
+            return str(content).strip()
+
+        except Exception as e:
+            logger.warning("Self-audit extraction failed: %s", e)
+            return None
 
     def _reflect_with_retry(
         self,

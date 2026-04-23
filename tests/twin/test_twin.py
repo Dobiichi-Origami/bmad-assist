@@ -18,6 +18,7 @@ from bmad_assist.twin.twin import (
     apply_page_updates,
     extract_yaml_block,
 )
+from bmad_assist.twin.prompts import build_extract_self_audit_prompt
 from bmad_assist.twin.wiki import (
     parse_frontmatter,
     read_page,
@@ -550,3 +551,471 @@ class TestApplyPageUpdates:
         """Empty updates list is a no-op."""
         apply_page_updates([], wiki_dir, "EPIC-001")
         # No crash, just rebuilds INDEX (empty)
+
+
+# ---------------------------------------------------------------------------
+# Twin._extract_self_audit_llm
+# ---------------------------------------------------------------------------
+
+
+class TestTwinExtractSelfAudit:
+    """Tests for Twin._extract_self_audit_llm."""
+
+    def test_regex_succeeds_no_llm_call(
+        self, twin_with_mock: Twin, sample_record: ExecutionRecord
+    ) -> None:
+        """When record.self_audit is not None, _extract_self_audit_llm is NOT called."""
+        # sample_record has self_audit="- All ACs satisfied\n- Tests pass"
+        twin_with_mock._provider.invoke.return_value = make_yaml_output(decision="continue", rationale="ok")
+        result = twin_with_mock.reflect(sample_record)
+        assert result.decision == "continue"
+        # Only the main reflect call was made (no extraction call)
+        # Successful parse on first attempt = 1 invoke call
+        assert twin_with_mock._provider.invoke.call_count == 1
+
+    def test_llm_fallback_when_regex_none(
+        self, twin_config: TwinProviderConfig, wiki_dir: Path
+    ) -> None:
+        """When self_audit is None, LLM extraction is attempted."""
+        provider = MagicMock()
+
+        # First call: extraction returns found=true
+        extract_output = "```yaml\nfound: true\ncontent: |\n  - All criteria met\n  - No regressions\n```"
+        # Second call: main reflect
+        reflect_output = make_yaml_output(decision="continue", rationale="ok")
+
+        provider.invoke.side_effect = [extract_output, reflect_output]
+        twin = Twin(config=twin_config, wiki_dir=wiki_dir, provider=provider)
+
+        record = ExecutionRecord(
+            phase="dev_story", mission="m",
+            llm_output="## 审查\n- 完成", self_audit=None,
+            success=True, duration_ms=100, error=None,
+        )
+        result = twin.reflect(record)
+        assert result.decision == "continue"
+        # Extraction call should have been made
+        assert provider.invoke.call_count >= 1
+
+    def test_llm_returns_found_false(
+        self, twin_config: TwinProviderConfig, wiki_dir: Path
+    ) -> None:
+        """When LLM returns found:false, self_audit remains None."""
+        provider = MagicMock()
+
+        # Extraction returns found:false
+        extract_output = "```yaml\nfound: false\ncontent: \"\"\n```"
+        # Main reflect call
+        reflect_output = make_yaml_output(decision="continue", rationale="ok")
+
+        provider.invoke.side_effect = [extract_output, reflect_output]
+        twin = Twin(config=twin_config, wiki_dir=wiki_dir, provider=provider)
+
+        record = ExecutionRecord(
+            phase="dev_story", mission="m",
+            llm_output="No audit section here", self_audit=None,
+            success=True, duration_ms=100, error=None,
+        )
+        result = twin.reflect(record)
+        assert result.decision == "continue"
+
+    def test_provider_failure_graceful(
+        self, twin_config: TwinProviderConfig, wiki_dir: Path
+    ) -> None:
+        """Provider exception during extraction returns None gracefully."""
+        provider = MagicMock()
+
+        # Extraction raises exception
+        # Main reflect call succeeds
+        reflect_output = make_yaml_output(decision="continue", rationale="ok")
+
+        provider.invoke.side_effect = [RuntimeError("API down"), reflect_output, reflect_output]
+        twin = Twin(config=twin_config, wiki_dir=wiki_dir, provider=provider)
+
+        record = ExecutionRecord(
+            phase="dev_story", mission="m",
+            llm_output="Some output", self_audit=None,
+            success=True, duration_ms=100, error=None,
+        )
+        result = twin.reflect(record)
+        assert result.decision == "continue"
+
+    def test_audit_extract_model_usage(
+        self, wiki_dir: Path
+    ) -> None:
+        """When audit_extract_model is set, extraction uses that model."""
+        config = TwinProviderConfig(enabled=True, audit_extract_model="haiku")
+        provider = MagicMock()
+
+        extract_output = "```yaml\nfound: true\ncontent: |\n  Extracted audit\n```"
+        reflect_output = make_yaml_output(decision="continue", rationale="ok")
+
+        provider.invoke.side_effect = [extract_output, reflect_output]
+        twin = Twin(config=config, wiki_dir=wiki_dir, provider=provider)
+
+        record = ExecutionRecord(
+            phase="dev_story", mission="m",
+            llm_output="## 审查\n- 完成", self_audit=None,
+            success=True, duration_ms=100, error=None,
+        )
+        twin.reflect(record)
+
+        # First call (extraction) should use "haiku"
+        first_call_kwargs = provider.invoke.call_args_list[0]
+        assert first_call_kwargs[1].get("model") == "haiku" or (
+            len(first_call_kwargs[0]) > 1 and first_call_kwargs[0][1] == "haiku"
+        )
+
+    def test_none_fallback_to_main_model(
+        self, twin_config: TwinProviderConfig, wiki_dir: Path
+    ) -> None:
+        """When audit_extract_model is None, extraction uses main model."""
+        provider = MagicMock()
+
+        extract_output = "```yaml\nfound: true\ncontent: |\n  Extracted\n```"
+        reflect_output = make_yaml_output(decision="continue", rationale="ok")
+
+        provider.invoke.side_effect = [extract_output, reflect_output]
+        twin = Twin(config=twin_config, wiki_dir=wiki_dir, provider=provider)
+
+        record = ExecutionRecord(
+            phase="dev_story", mission="m",
+            llm_output="## 审查\n- Done", self_audit=None,
+            success=True, duration_ms=100, error=None,
+        )
+        twin.reflect(record)
+
+        # First call should use main model ("opus" from default config)
+        first_call_kwargs = provider.invoke.call_args_list[0]
+        model_used = first_call_kwargs[1].get("model") or (
+            first_call_kwargs[0][1] if len(first_call_kwargs[0]) > 1 else None
+        )
+        assert model_used == "opus"
+
+    def test_empty_llm_output_returns_none(
+        self, twin_config: TwinProviderConfig, wiki_dir: Path
+    ) -> None:
+        """Empty llm_output returns None without LLM call."""
+        provider = MagicMock()
+        reflect_output = make_yaml_output(decision="continue", rationale="ok")
+        provider.invoke.return_value = reflect_output
+
+        twin = Twin(config=twin_config, wiki_dir=wiki_dir, provider=provider)
+
+        record = ExecutionRecord(
+            phase="dev_story", mission="m",
+            llm_output="", self_audit=None,
+            success=True, duration_ms=100, error=None,
+        )
+        result = twin.reflect(record)
+        assert result.decision == "continue"
+
+    def test_record_not_modified_by_extraction(
+        self, twin_config: TwinProviderConfig, wiki_dir: Path
+    ) -> None:
+        """LLM extraction result doesn't modify the record dataclass."""
+        provider = MagicMock()
+
+        extract_output = "```yaml\nfound: true\ncontent: |\n  - Extracted audit\n```"
+        reflect_output = make_yaml_output(decision="continue", rationale="ok")
+
+        provider.invoke.side_effect = [extract_output, reflect_output]
+        twin = Twin(config=twin_config, wiki_dir=wiki_dir, provider=provider)
+
+        record = ExecutionRecord(
+            phase="dev_story", mission="m",
+            llm_output="## 审查\n- Done", self_audit=None,
+            success=True, duration_ms=100, error=None,
+        )
+        twin.reflect(record)
+        # record.self_audit should still be None (not modified)
+        assert record.self_audit is None
+
+
+# ---------------------------------------------------------------------------
+# Chinese heading and non-standard heading level scenarios
+# ---------------------------------------------------------------------------
+
+
+class TestTwinExtractSelfAuditHeadings:
+    """Tests for Chinese heading and non-standard heading level extraction."""
+
+    def test_chinese_heading_audit(
+        self, twin_config: TwinProviderConfig, wiki_dir: Path
+    ) -> None:
+        """LLM extraction finds Chinese heading '审查' section."""
+        provider = MagicMock()
+
+        extract_output = "```yaml\nfound: true\ncontent: |\n  - 所有验收标准已满足\n  - 无回归问题\n```"
+        reflect_output = make_yaml_output(decision="continue", rationale="ok")
+
+        provider.invoke.side_effect = [extract_output, reflect_output]
+        twin = Twin(config=twin_config, wiki_dir=wiki_dir, provider=provider)
+
+        record = ExecutionRecord(
+            phase="dev_story", mission="m",
+            llm_output="## 审查\n- 所有验收标准已满足\n- 无回归问题",
+            self_audit=None, success=True, duration_ms=100, error=None,
+        )
+        result = twin.reflect(record)
+        assert result.decision == "continue"
+
+    def test_chinese_zishen_heading(
+        self, twin_config: TwinProviderConfig, wiki_dir: Path
+    ) -> None:
+        """LLM extraction finds Chinese heading '自审' section."""
+        provider = MagicMock()
+
+        extract_output = "```yaml\nfound: true\ncontent: |\n  - 代码质量良好\n```"
+        reflect_output = make_yaml_output(decision="continue", rationale="ok")
+
+        provider.invoke.side_effect = [extract_output, reflect_output]
+        twin = Twin(config=twin_config, wiki_dir=wiki_dir, provider=provider)
+
+        record = ExecutionRecord(
+            phase="dev_story", mission="m",
+            llm_output="## 自审\n- 代码质量良好",
+            self_audit=None, success=True, duration_ms=100, error=None,
+        )
+        result = twin.reflect(record)
+        assert result.decision == "continue"
+
+    def test_h3_quality_check_heading(
+        self, twin_config: TwinProviderConfig, wiki_dir: Path
+    ) -> None:
+        """LLM extraction finds h3 '### Quality Check' section."""
+        provider = MagicMock()
+
+        extract_output = "```yaml\nfound: true\ncontent: |\n  - Code reviewed\n  - Tests passing\n```"
+        reflect_output = make_yaml_output(decision="continue", rationale="ok")
+
+        provider.invoke.side_effect = [extract_output, reflect_output]
+        twin = Twin(config=twin_config, wiki_dir=wiki_dir, provider=provider)
+
+        record = ExecutionRecord(
+            phase="dev_story", mission="m",
+            llm_output="### Quality Check\n- Code reviewed\n- Tests passing",
+            self_audit=None, success=True, duration_ms=100, error=None,
+        )
+        result = twin.reflect(record)
+        assert result.decision == "continue"
+
+
+# ---------------------------------------------------------------------------
+# Direct unit tests for _extract_self_audit_llm
+# ---------------------------------------------------------------------------
+
+
+class TestExtractSelfAuditLlmUnit:
+    """Direct unit tests for Twin._extract_self_audit_llm."""
+
+    def test_successful_extraction_returns_content(
+        self, twin_config: TwinProviderConfig, wiki_dir: Path
+    ) -> None:
+        """Direct call returns extracted content when LLM finds audit."""
+        provider = MagicMock()
+        provider.invoke.return_value = (
+            "```yaml\nfound: true\ncontent: |\n  - ACs met\n  - No regressions\n```"
+        )
+        twin = Twin(config=twin_config, wiki_dir=wiki_dir, provider=provider)
+
+        result = twin._extract_self_audit_llm("## 审查\n- ACs met\n- No regressions")
+        assert result is not None
+        assert "ACs met" in result
+        assert "No regressions" in result
+
+    def test_empty_llm_output_returns_none_without_call(
+        self, twin_config: TwinProviderConfig, wiki_dir: Path
+    ) -> None:
+        """Empty string returns None immediately, no LLM call."""
+        provider = MagicMock()
+        twin = Twin(config=twin_config, wiki_dir=wiki_dir, provider=provider)
+
+        result = twin._extract_self_audit_llm("")
+        assert result is None
+        provider.invoke.assert_not_called()
+
+    def test_yaml_parse_failure_returns_none(
+        self, twin_config: TwinProviderConfig, wiki_dir: Path
+    ) -> None:
+        """LLM returns non-YAML output → returns None."""
+        provider = MagicMock()
+        provider.invoke.return_value = "I couldn't find any audit section in this document."
+        twin = Twin(config=twin_config, wiki_dir=wiki_dir, provider=provider)
+
+        result = twin._extract_self_audit_llm("Some output text")
+        assert result is None
+
+    def test_invalid_yaml_block_returns_none(
+        self, twin_config: TwinProviderConfig, wiki_dir: Path
+    ) -> None:
+        """LLM returns YAML block but content is invalid YAML → returns None."""
+        provider = MagicMock()
+        provider.invoke.return_value = "```yaml\nfound: true\ncontent: {invalid yaml [[\n```"
+        twin = Twin(config=twin_config, wiki_dir=wiki_dir, provider=provider)
+
+        result = twin._extract_self_audit_llm("Some output")
+        assert result is None
+
+    def test_found_true_empty_content_returns_none(
+        self, twin_config: TwinProviderConfig, wiki_dir: Path
+    ) -> None:
+        """found: true but content is empty string → returns None."""
+        provider = MagicMock()
+        provider.invoke.return_value = "```yaml\nfound: true\ncontent: \"\"\n```"
+        twin = Twin(config=twin_config, wiki_dir=wiki_dir, provider=provider)
+
+        result = twin._extract_self_audit_llm("Some output")
+        assert result is None
+
+    def test_found_false_returns_none(
+        self, twin_config: TwinProviderConfig, wiki_dir: Path
+    ) -> None:
+        """found: false → returns None."""
+        provider = MagicMock()
+        provider.invoke.return_value = "```yaml\nfound: false\ncontent: \"\"\n```"
+        twin = Twin(config=twin_config, wiki_dir=wiki_dir, provider=provider)
+
+        result = twin._extract_self_audit_llm("Some output without audit")
+        assert result is None
+
+    def test_non_dict_yaml_returns_none(
+        self, twin_config: TwinProviderConfig, wiki_dir: Path
+    ) -> None:
+        """YAML parses to a list (not dict) → returns None."""
+        provider = MagicMock()
+        provider.invoke.return_value = "```yaml\n- item1\n- item2\n```"
+        twin = Twin(config=twin_config, wiki_dir=wiki_dir, provider=provider)
+
+        result = twin._extract_self_audit_llm("Some output")
+        assert result is None
+
+    def test_provider_exception_returns_none(
+        self, twin_config: TwinProviderConfig, wiki_dir: Path
+    ) -> None:
+        """Provider raises exception → returns None, does not propagate."""
+        provider = MagicMock()
+        provider.invoke.side_effect = RuntimeError("API timeout")
+        twin = Twin(config=twin_config, wiki_dir=wiki_dir, provider=provider)
+
+        result = twin._extract_self_audit_llm("Some output")
+        assert result is None
+
+    def test_uses_audit_extract_model(
+        self, wiki_dir: Path
+    ) -> None:
+        """When audit_extract_model is set, invoke is called with that model."""
+        config = TwinProviderConfig(enabled=True, audit_extract_model="haiku")
+        provider = MagicMock()
+        provider.invoke.return_value = "```yaml\nfound: false\ncontent: \"\"\n```"
+        twin = Twin(config=config, wiki_dir=wiki_dir, provider=provider)
+
+        twin._extract_self_audit_llm("Some output")
+        provider.invoke.assert_called_once()
+        call_kwargs = provider.invoke.call_args
+        assert call_kwargs[1]["model"] == "haiku"
+
+    def test_none_model_falls_back_to_main(
+        self, twin_config: TwinProviderConfig, wiki_dir: Path
+    ) -> None:
+        """When audit_extract_model is None, uses main model."""
+        provider = MagicMock()
+        provider.invoke.return_value = "```yaml\nfound: false\ncontent: \"\"\n```"
+        twin = Twin(config=twin_config, wiki_dir=wiki_dir, provider=provider)
+
+        twin._extract_self_audit_llm("Some output")
+        provider.invoke.assert_called_once()
+        call_kwargs = provider.invoke.call_args
+        assert call_kwargs[1]["model"] == "opus"
+
+    def test_content_is_stripped(
+        self, twin_config: TwinProviderConfig, wiki_dir: Path
+    ) -> None:
+        """Returned content has leading/trailing whitespace stripped."""
+        provider = MagicMock()
+        provider.invoke.return_value = (
+            "```yaml\nfound: true\ncontent: |\n  - Item 1\n  - Item 2\n  \n```"
+        )
+        twin = Twin(config=twin_config, wiki_dir=wiki_dir, provider=provider)
+
+        result = twin._extract_self_audit_llm("Some output")
+        assert result is not None
+        assert result.strip() == result
+
+    def test_invoke_prompt_contains_document(
+        self, twin_config: TwinProviderConfig, wiki_dir: Path
+    ) -> None:
+        """The prompt passed to invoke contains the llm_output text."""
+        provider = MagicMock()
+        provider.invoke.return_value = "```yaml\nfound: false\ncontent: \"\"\n```"
+        twin = Twin(config=twin_config, wiki_dir=wiki_dir, provider=provider)
+
+        twin._extract_self_audit_llm("UNIQUE_MARKER_TEXT_12345")
+        call_args = provider.invoke.call_args
+        prompt = call_args[0][0]
+        assert "UNIQUE_MARKER_TEXT_12345" in prompt
+
+
+# ---------------------------------------------------------------------------
+# Integration: extracted content flows into reflect prompt
+# ---------------------------------------------------------------------------
+
+
+class TestExtractSelfAuditIntegration:
+    """Verify extracted content reaches build_reflect_prompt correctly."""
+
+    def test_extracted_content_appears_in_reflect_prompt(
+        self, twin_config: TwinProviderConfig, wiki_dir: Path
+    ) -> None:
+        """When LLM extracts audit, the content appears in the reflect prompt."""
+        provider = MagicMock()
+        captured_prompts = []
+
+        def capture_invoke(prompt: str, **kwargs) -> str:
+            captured_prompts.append(prompt)
+            if len(captured_prompts) == 1:
+                # First call = extraction
+                return "```yaml\nfound: true\ncontent: |\n  - ALL_AC_MET\n  - NO_REGRESSION\n```"
+            # Second call = reflect
+            return make_yaml_output(decision="continue", rationale="ok")
+
+        provider.invoke = capture_invoke
+        twin = Twin(config=twin_config, wiki_dir=wiki_dir, provider=provider)
+
+        record = ExecutionRecord(
+            phase="dev_story", mission="m",
+            llm_output="## 审查\n- ALL_AC_MET\n- NO_REGRESSION",
+            self_audit=None, success=True, duration_ms=100, error=None,
+        )
+        twin.reflect(record)
+
+        # The reflect prompt (second call) should contain extracted content
+        reflect_prompt = captured_prompts[1]
+        assert "ALL_AC_MET" in reflect_prompt
+
+    def test_extraction_none_falls_back_to_no_audit_message(
+        self, twin_config: TwinProviderConfig, wiki_dir: Path
+    ) -> None:
+        """When extraction also returns None, prompt uses '(No Self-Audit…)'."""
+        provider = MagicMock()
+        captured_prompts = []
+
+        def capture_invoke(prompt: str, **kwargs) -> str:
+            captured_prompts.append(prompt)
+            if len(captured_prompts) == 1:
+                # Extraction returns found:false
+                return "```yaml\nfound: false\ncontent: \"\"\n```"
+            return make_yaml_output(decision="continue", rationale="ok")
+
+        provider.invoke = capture_invoke
+        twin = Twin(config=twin_config, wiki_dir=wiki_dir, provider=provider)
+
+        record = ExecutionRecord(
+            phase="dev_story", mission="m",
+            llm_output="No audit here at all",
+            self_audit=None, success=True, duration_ms=100, error=None,
+        )
+        twin.reflect(record)
+
+        reflect_prompt = captured_prompts[1]
+        assert "No Self-Audit section found" in reflect_prompt

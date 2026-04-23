@@ -13,6 +13,7 @@ from bmad_assist.twin.prompts import (
     _GENERIC_REVIEW_GUIDANCE,
     _INITIALIZATION_GUIDANCE,
     _WATCHOUTS_LIMIT,
+    build_extract_self_audit_prompt,
     build_guide_prompt,
     build_reflect_prompt,
 )
@@ -335,3 +336,31 @@ class TestBuildGuidePrompt:
             is_guide_present=False,
         )
         assert "No pages available" in prompt
+
+
+class TestBuildExtractSelfAuditPrompt:
+    """Tests for build_extract_self_audit_prompt."""
+
+    def test_contains_document_content(self) -> None:
+        """Prompt contains the document content."""
+        prompt = build_extract_self_audit_prompt("some output text")
+        assert "some output text" in prompt
+
+    def test_requests_yaml_output(self) -> None:
+        """Prompt instructs LLM to return YAML with found and content fields."""
+        prompt = build_extract_self_audit_prompt("test")
+        assert "found" in prompt
+        assert "content" in prompt
+        assert "YAML" in prompt or "yaml" in prompt
+
+    def test_lists_chinese_heading_variants(self) -> None:
+        """Prompt includes Chinese heading examples."""
+        prompt = build_extract_self_audit_prompt("test")
+        assert "审查" in prompt
+        assert "自审" in prompt
+
+    def test_lists_english_heading_variants(self) -> None:
+        """Prompt includes English heading examples."""
+        prompt = build_extract_self_audit_prompt("test")
+        assert "Self-Audit" in prompt
+        assert "Quality Check" in prompt

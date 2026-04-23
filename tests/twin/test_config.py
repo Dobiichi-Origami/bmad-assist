@@ -68,6 +68,18 @@ class TestTwinProviderConfigValidation:
         assert config.max_retries == 5
         assert config.retry_exhausted_action == "continue"
 
+    def test_default_audit_extract_model_is_none(self) -> None:
+        """Default audit_extract_model is None."""
+        config = TwinProviderConfig()
+        assert config.audit_extract_model is None
+
+    def test_custom_audit_extract_model(self) -> None:
+        """Custom audit_extract_model value is accepted."""
+        config = TwinProviderConfig(
+            provider="claude", model="opus", audit_extract_model="haiku"
+        )
+        assert config.audit_extract_model == "haiku"
+
 
 class TestBMADTWINENABLEDEnvironmentOverride:
     """Verify BMAD_TWIN_ENABLED environment variable overrides config loading."""

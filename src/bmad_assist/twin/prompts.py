@@ -13,8 +13,55 @@ logger = logging.getLogger(__name__)
 __all__ = [
     "build_reflect_prompt",
     "build_guide_prompt",
+    "build_extract_self_audit_prompt",
     "PHASE_REVIEW_GUIDANCE",
 ]
+
+# ---------------------------------------------------------------------------
+# Self-audit extraction prompt (LLM fallback when regex fails)
+# ---------------------------------------------------------------------------
+
+_EXTRACT_SELF_AUDIT_PROMPT_TEMPLATE = """\
+You are a document analyzer. Your task is to find and extract a self-audit, review, or quality-check \
+section from the following document.
+
+Look for sections with headings like:
+- "Self-Audit", "Execution Self-Audit", "Self Audit"
+- "审查", "自审", "执行自审"
+- "Quality Check", "Quality Review", "Verification"
+- Any heading at any level (##, ###, etc.) that contains a self-assessment or audit of the work done
+
+Return your result as YAML:
+
+```yaml
+found: true  # or false if no such section exists
+content: |
+  <verbatim content of the section, not a summary>
+```
+
+If no such section exists, return:
+```yaml
+found: false
+content: ""
+```
+
+# Document to analyze
+
+{document}
+"""
+
+
+def build_extract_self_audit_prompt(llm_output: str) -> str:
+    """Build the extraction prompt for LLM-based self-audit detection.
+
+    Args:
+        llm_output: The raw LLM output to scan for a self-audit section.
+
+    Returns:
+        Assembled extraction prompt string.
+    """
+    return _EXTRACT_SELF_AUDIT_PROMPT_TEMPLATE.format(document=llm_output)
+
 
 # ---------------------------------------------------------------------------
 # Phase-specific review guidance (Task 4.4)

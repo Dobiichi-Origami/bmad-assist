@@ -461,9 +461,10 @@ class TestTruncationInReflectFlow:
             self_audit=None, success=True, duration_ms=5000, error=None,
         )
         twin.reflect(record)
-        # The prompt should contain truncated output
-        assert len(captured_prompt) == 1
-        assert "TRUNCATED" in captured_prompt[0]
+        # self_audit=None triggers extraction call first, then the main reflect call
+        assert len(captured_prompt) == 2
+        # The reflect prompt (second call) should contain truncated output
+        assert "TRUNCATED" in captured_prompt[1]
 
     def test_long_files_diff_truncated(self, tmp_path: Path) -> None:
         """Long files_diff is truncated before being included in prompt."""
@@ -483,8 +484,10 @@ class TestTruncationInReflectFlow:
             files_diff=long_diff,
         )
         twin.reflect(record)
-        assert len(captured_prompt) == 1
-        assert "TRUNCATED" in captured_prompt[0]
+        # self_audit=None triggers extraction call first, then the main reflect call
+        assert len(captured_prompt) == 2
+        # The reflect prompt (second call) should contain truncated diff
+        assert "TRUNCATED" in captured_prompt[1]
 
 
 # ---------------------------------------------------------------------------
