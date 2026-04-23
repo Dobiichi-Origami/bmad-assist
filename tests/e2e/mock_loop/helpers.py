@@ -41,7 +41,7 @@ class ScriptedPhaseExecutor:
         # Optional callback invoked on every call (for signal injection etc.)
         self._on_call = on_call
 
-    def __call__(self, state: State) -> PhaseResult:
+    def __call__(self, state: State, compass: str | None = None) -> PhaseResult:
         key = (state.current_epic, state.current_story, state.current_phase)
         self.invocations.append(key)
 

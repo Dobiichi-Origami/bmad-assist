@@ -229,11 +229,15 @@ def execute_phase(state: State, compass: str | None = None) -> PhaseResult:
 
     try:
         # AC1, AC4: Call handler (may raise Exception)
-        # Pass compass to handler if provided
+        # Inject compass via instance attribute instead of keyword argument.
+        # Most handlers override execute() without accepting compass=,
+        # so passing it as kwargs would cause TypeError.
+        # Setting _compass on the instance lets handlers that need it
+        # (via BaseHandler.execute or self._compass) access it, without
+        # requiring every handler to add the parameter.
         if compass is not None:
-            handler_result = handler(state, compass=compass)
-        else:
-            handler_result = handler(state)
+            handler._compass = compass
+        handler_result = handler(state)
 
         # Defensive: validate handler returned correct type
         if not isinstance(handler_result, PhaseResult):

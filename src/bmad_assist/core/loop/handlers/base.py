@@ -889,7 +889,9 @@ class BaseHandler(ABC):
         start_time = datetime.now(UTC) if self.track_timing else None
 
         # Store compass for use in render_prompt
-        self._compass = compass
+        # Preserve pre-set value from dispatch when compass is not explicitly passed
+        if compass is not None:
+            self._compass = compass
 
         try:
             # Load config and render prompt
