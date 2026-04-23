@@ -118,3 +118,46 @@ class TestExecutePhaseCompassInjection:
 
         # The handler's __call__ recorded what _compass was at call time
         assert compass_aware_handler.compass_seen == "dispatch-compass"
+
+    def test_compass_on_bound_method_handler(self) -> None:
+        """Compass injection works when get_handler() returns a bound method.
+
+        This is the real production path: init_handlers() registers handler
+        instances, and get_handler() returns instance.execute (a bound method).
+        Setting _compass on a bound method raises AttributeError, so dispatch
+        must use handler.__self__ to reach the underlying instance.
+        """
+        state = State(current_phase=Phase.DEV_STORY)
+        seen_compass: list[str | None] = []
+
+        class HandlerWithExecute:
+            """Simulates a real BaseHandler subclass with an execute() method."""
+
+            def execute(self, s: State) -> PhaseResult:
+                seen_compass.append(getattr(self, "_compass", None))
+                return PhaseResult.ok()
+
+        instance = HandlerWithExecute()
+        # get_handler() returns the bound method, not the instance
+        bound_method = instance.execute
+
+        with patch("bmad_assist.core.loop.dispatch.get_handler", return_value=bound_method):
+            result = execute_phase(state, compass="bound-method-compass")
+
+        assert result.success is True
+        assert seen_compass[0] == "bound-method-compass"
+
+    def test_compass_bound_method_none_compass_no_error(self) -> None:
+        """No AttributeError when compass=None and handler is a bound method."""
+
+        class HandlerWithExecute:
+            def execute(self, s: State) -> PhaseResult:
+                return PhaseResult.ok()
+
+        instance = HandlerWithExecute()
+        state = State(current_phase=Phase.DEV_STORY)
+
+        with patch("bmad_assist.core.loop.dispatch.get_handler", return_value=instance.execute):
+            result = execute_phase(state, compass=None)
+
+        assert result.success is True
