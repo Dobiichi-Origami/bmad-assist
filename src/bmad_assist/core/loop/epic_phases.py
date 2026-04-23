@@ -186,6 +186,8 @@ def _execute_phase_with_twin(
                     return PhaseResult.fail(f"Twin HALT after RETRY: {retry_twin_result.rationale}")
                 elif retry_twin_result.decision == "retry":
                     twin_result = retry_twin_result
+                    if retry_twin_result.drift_assessment and retry_twin_result.drift_assessment.correction:
+                        correction = retry_twin_result.drift_assessment.correction
                     continue
             else:
                 # Retries exhausted
@@ -196,6 +198,7 @@ def _execute_phase_with_twin(
                 if retry_exhausted_action == "halt":
                     return PhaseResult.fail(f"Twin RETRY exhausted: {twin_result.rationale}")
                 # else continue with the last retry result
+                result = retry_result
     except Exception as e:
         logger.warning("Twin reflect failed, proceeding: %s: %s", type(e).__name__, e)
 

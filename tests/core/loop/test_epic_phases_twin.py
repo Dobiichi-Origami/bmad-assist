@@ -513,7 +513,7 @@ class TestExecutePhaseWithTwin:
         assert "RETRY exhausted" in (result.error or "")
 
     def test_retry_exhausted_continue_action(self, tmp_path: Path) -> None:
-        """Retry exhausted with continue → returns the last retry result (success)."""
+        """Retry exhausted with continue → returns the last retry result, not the original."""
         config = _make_config(twin_enabled=True)
         state = State(current_epic=1, current_phase=Phase.ATDD)
 
@@ -530,13 +530,72 @@ class TestExecutePhaseWithTwin:
             drift_assessment=DriftAssessment(drifted=True, evidence="drift", correction="fix again"),
         )
 
+        call_count = [0]
+
+        def mock_execute_phase(state: State, compass: str | None = None) -> PhaseResult:
+            call_count[0] += 1
+            # Original call returns result with marker "original", retry returns "retry"
+            marker = "original" if call_count[0] == 1 else "retry"
+            return PhaseResult.ok(outputs={"response": marker})
+
         with (
-            patch("bmad_assist.core.loop.epic_phases.execute_phase", return_value=PhaseResult.ok()),
+            patch("bmad_assist.core.loop.epic_phases.execute_phase", side_effect=mock_execute_phase),
             patch("bmad_assist.core.loop.epic_phases.resolve_twin_provider", return_value=MagicMock()),
             patch("bmad_assist.twin.twin.Twin", return_value=mock_twin),
             patch("bmad_assist.twin.wiki.init_wiki", return_value=Path("/tmp/wiki")),
         ):
             result = _execute_phase_with_twin(state, config, tmp_path, retry_exhausted_action="continue")
 
-        # continue action returns the last result (which was successful)
+        # Must return the retry result, not the original
         assert result.success is True
+        assert result.outputs.get("response") == "retry"
+
+    def test_multi_retry_updates_correction(self, tmp_path: Path) -> None:
+        """Multiple retries: each retry's correction is updated from the latest reflect."""
+        config = _make_config(twin_enabled=True)
+        state = State(current_epic=1, current_phase=Phase.ATDD)
+
+        mock_twin = MagicMock()
+        mock_twin.guide.return_value = "guide-compass"
+        mock_twin.config.max_retries = 3
+        mock_twin.config.retry_exhausted_action = "halt"
+        mock_twin.wiki_dir = Path("/tmp/wiki")
+
+        # reflect returns: retry(with correction A) → retry(with correction B) → continue
+        reflect_responses = iter([
+            TwinResult(
+                decision="retry",
+                rationale="First correction",
+                drift_assessment=DriftAssessment(drifted=True, evidence="drift", correction="fix-A"),
+            ),
+            TwinResult(
+                decision="retry",
+                rationale="Second correction",
+                drift_assessment=DriftAssessment(drifted=True, evidence="drift", correction="fix-B"),
+            ),
+            TwinResult(decision="continue", rationale="Fixed"),
+        ])
+        mock_twin.reflect.side_effect = lambda *a, **k: next(reflect_responses)
+
+        compass_seen: list[str | None] = []
+
+        def mock_execute_phase(state: State, compass: str | None = None) -> PhaseResult:
+            compass_seen.append(compass)
+            return PhaseResult.ok()
+
+        with (
+            patch("bmad_assist.core.loop.epic_phases.execute_phase", side_effect=mock_execute_phase),
+            patch("bmad_assist.core.loop.epic_phases.resolve_twin_provider", return_value=MagicMock()),
+            patch("bmad_assist.twin.twin.Twin", return_value=mock_twin),
+            patch("bmad_assist.twin.wiki.init_wiki", return_value=Path("/tmp/wiki")),
+        ):
+            result = _execute_phase_with_twin(state, config, tmp_path, retry_exhausted_action="halt")
+
+        assert result.success is True
+        # 3 execute_phase calls: original + retry1 + retry2
+        assert len(compass_seen) == 3
+        # First retry compass should contain fix-A
+        assert "fix-A" in (compass_seen[1] or "")
+        # Second retry compass should contain fix-B (updated correction), NOT fix-A
+        assert "fix-B" in (compass_seen[2] or "")
+        assert "fix-A" not in (compass_seen[2] or "")
