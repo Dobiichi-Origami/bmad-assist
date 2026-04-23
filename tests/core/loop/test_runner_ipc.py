@@ -29,9 +29,17 @@ import pytest
 
 
 @pytest.fixture()
-def sock_dir(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
-    """Create and monkeypatch socket directory for IPC tests."""
-    d = tmp_path / "sockets"
+def sock_dir(monkeypatch: pytest.MonkeyPatch) -> Path:
+    """Create and monkeypatch socket directory for IPC tests.
+
+    Uses tempfile with short prefix to stay under the 107-byte sun_path
+    limit for Unix domain sockets. pytest's tmp_path can resolve to paths
+    too long on macOS (/private/var/folders/...).
+    """
+    import tempfile
+
+    short_tmp = tempfile.mkdtemp(prefix="ipc")
+    d = Path(short_tmp) / "s"
     d.mkdir(mode=0o700)
     monkeypatch.setattr("bmad_assist.ipc.server.get_socket_dir", lambda: d)
     monkeypatch.setattr("bmad_assist.ipc.discovery.SOCKET_DIR", d)
@@ -97,10 +105,11 @@ class TestServerLifecycle:
         from bmad_assist.core.loop.runner import _start_ipc_server
 
         # Use a short temp dir to stay under 107-byte sun_path limit.
-        # tmp_path from pytest can be too long for Unix domain sockets.
-        with tempfile.TemporaryDirectory(prefix="ipc") as short_tmp:
-            sock_dir = Path(short_tmp) / "s"
-            sock_dir.mkdir(mode=0o700)
+        # get_socket_path produces a 32-char hash + ".sock" (37 bytes) filename,
+        # so the directory must be short enough to leave room.
+        # On macOS, /var/folders/.../T/iXXXXXX resolves to ~55 bytes.
+        with tempfile.TemporaryDirectory(prefix="i") as short_tmp:
+            sock_dir = Path(short_tmp)
             # Patch get_socket_dir in BOTH server and protocol modules — _start_ipc_server
             # imports get_socket_path from protocol which calls get_socket_dir internally.
             monkeypatch.setattr("bmad_assist.ipc.server.get_socket_dir", lambda: sock_dir)
