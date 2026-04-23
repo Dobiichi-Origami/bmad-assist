@@ -232,7 +232,10 @@ def execute_phase(state: State, compass: str | None = None) -> PhaseResult:
         # (via BaseHandler.execute or self._compass) access it, without
         # requiring every handler to add the parameter.
         if compass is not None:
-            handler._compass = compass
+            # handler may be a bound method; set _compass on the
+            # underlying instance so the handler can read self._compass.
+            target = getattr(handler, "__self__", handler)
+            target._compass = compass
         handler_result = handler(state)
 
         # Defensive: validate handler returned correct type
