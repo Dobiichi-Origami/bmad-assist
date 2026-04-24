@@ -56,3 +56,9 @@ class TwinProviderConfig(BaseModel):
         default=None,
         description="Model for LLM-based self-audit extraction; None falls back to model",
     )
+    timeout_retries: int | None = Field(
+        default=2,
+        description="Max timeout retry attempts for Twin LLM calls. "
+        "None disables retry (first ProviderTimeoutError propagates). "
+        "Separate from max_retries which controls the RETRY decision loop.",
+    )

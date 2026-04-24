@@ -14,6 +14,8 @@ from typing import Any, Literal
 import yaml
 from pydantic import BaseModel, Field, model_validator
 
+from bmad_assist.core.exceptions import ProviderTimeoutError
+from bmad_assist.core.retry import invoke_with_timeout_retry
 from bmad_assist.twin.config import TwinProviderConfig
 from bmad_assist.twin.execution_record import ExecutionRecord
 from bmad_assist.twin.prompts import build_extract_self_audit_prompt, build_guide_prompt, build_reflect_prompt
@@ -225,7 +227,13 @@ class Twin:
 
             prompt = build_extract_self_audit_prompt(truncated)
             model = self.config.audit_extract_model or self.config.model
-            raw = self._provider.invoke(prompt, model=model)
+            raw = invoke_with_timeout_retry(
+                self._provider.invoke,
+                timeout_retries=self.config.timeout_retries,
+                phase_name="twin_audit_extract",
+                prompt=prompt,
+                model=model,
+            )
             if hasattr(raw, "stdout"):
                 raw = raw.stdout
             raw = str(raw)
@@ -282,13 +290,22 @@ class Twin:
     def _invoke_llm(self, prompt: str) -> str:
         """Invoke the LLM provider and return raw output.
 
-        Raises on any provider failure.
+        Routes through invoke_with_timeout_retry for ProviderTimeoutError
+        handling before falling through to degradation.
+
+        Raises on any provider failure (including ProviderTimeoutError
+        after all timeout retries exhausted).
         """
         if self._provider is None:
             raise RuntimeError("No LLM provider configured for Twin")
 
-        # Use provider's invoke method with configured model
-        result = self._provider.invoke(prompt, model=self.config.model)
+        result = invoke_with_timeout_retry(
+            self._provider.invoke,
+            timeout_retries=self.config.timeout_retries,
+            phase_name="twin_reflect",
+            prompt=prompt,
+            model=self.config.model,
+        )
         if hasattr(result, "stdout"):
             return result.stdout
         return str(result)

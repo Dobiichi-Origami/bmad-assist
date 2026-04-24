@@ -8,6 +8,7 @@ from unittest.mock import MagicMock
 import pytest
 from pydantic import ValidationError
 
+from bmad_assist.core.exceptions import ProviderTimeoutError
 from bmad_assist.twin.config import TwinProviderConfig
 from bmad_assist.twin.execution_record import ExecutionRecord
 from bmad_assist.twin.twin import (
@@ -952,7 +953,7 @@ class TestExtractSelfAuditLlmUnit:
 
         twin._extract_self_audit_llm("UNIQUE_MARKER_TEXT_12345")
         call_args = provider.invoke.call_args
-        prompt = call_args[0][0]
+        prompt = call_args[1].get("prompt") or (call_args[0][0] if call_args[0] else None)
         assert "UNIQUE_MARKER_TEXT_12345" in prompt
 
 
@@ -1019,3 +1020,134 @@ class TestExtractSelfAuditIntegration:
 
         reflect_prompt = captured_prompts[1]
         assert "No Self-Audit section found" in reflect_prompt
+
+
+# ---------------------------------------------------------------------------
+# Timeout retry behavior
+# ---------------------------------------------------------------------------
+
+
+class TestInvokeLlmTimeoutRetry:
+    """Tests for _invoke_llm timeout retry via invoke_with_timeout_retry."""
+
+    def test_retries_on_timeout_and_succeeds(
+        self, wiki_dir: Path
+    ) -> None:
+        """_invoke_llm retries on ProviderTimeoutError and succeeds on second attempt."""
+        provider = MagicMock()
+        provider.invoke.side_effect = [
+            ProviderTimeoutError("timeout"),
+            "LLM output text",
+        ]
+        config = TwinProviderConfig(enabled=True, timeout_retries=2)
+        twin = Twin(config=config, wiki_dir=wiki_dir, provider=provider)
+
+        result = twin._invoke_llm("test prompt")
+        assert result == "LLM output text"
+        assert provider.invoke.call_count == 2
+
+    def test_raises_after_retries_exhausted(
+        self, wiki_dir: Path
+    ) -> None:
+        """_invoke_llm raises ProviderTimeoutError after all timeout retries exhausted."""
+        provider = MagicMock()
+        provider.invoke.side_effect = ProviderTimeoutError("timeout")
+        config = TwinProviderConfig(enabled=True, timeout_retries=2)
+        twin = Twin(config=config, wiki_dir=wiki_dir, provider=provider)
+
+        with pytest.raises(ProviderTimeoutError, match="timeout"):
+            twin._invoke_llm("test prompt")
+        # 1 initial + 2 retries = 3 attempts
+        assert provider.invoke.call_count == 3
+
+    def test_no_retry_when_timeout_retries_none(
+        self, wiki_dir: Path
+    ) -> None:
+        """_invoke_llm with timeout_retries=None does not retry on timeout."""
+        provider = MagicMock()
+        provider.invoke.side_effect = ProviderTimeoutError("timeout")
+        config = TwinProviderConfig(enabled=True, timeout_retries=None)
+        twin = Twin(config=config, wiki_dir=wiki_dir, provider=provider)
+
+        with pytest.raises(ProviderTimeoutError, match="timeout"):
+            twin._invoke_llm("test prompt")
+        # Only 1 attempt, no retry
+        assert provider.invoke.call_count == 1
+
+
+class TestExtractSelfAuditTimeoutRetry:
+    """Tests for _extract_self_audit_llm timeout retry behavior."""
+
+    def test_retries_on_timeout_and_returns_content(
+        self, wiki_dir: Path
+    ) -> None:
+        """_extract_self_audit_llm retries on ProviderTimeoutError and returns content."""
+        provider = MagicMock()
+        provider.invoke.side_effect = [
+            ProviderTimeoutError("timeout"),
+            "```yaml\nfound: true\ncontent: |\n  - Extracted audit\n```",
+        ]
+        config = TwinProviderConfig(enabled=True, timeout_retries=2)
+        twin = Twin(config=config, wiki_dir=wiki_dir, provider=provider)
+
+        result = twin._extract_self_audit_llm("Some output")
+        assert result is not None
+        assert "Extracted audit" in result
+        assert provider.invoke.call_count == 2
+
+    def test_returns_none_after_retries_exhausted(
+        self, wiki_dir: Path
+    ) -> None:
+        """_extract_self_audit_llm returns None after timeout retries exhausted."""
+        provider = MagicMock()
+        provider.invoke.side_effect = ProviderTimeoutError("timeout")
+        config = TwinProviderConfig(enabled=True, timeout_retries=2)
+        twin = Twin(config=config, wiki_dir=wiki_dir, provider=provider)
+
+        result = twin._extract_self_audit_llm("Some output")
+        assert result is None
+
+
+class TestReflectWithRetryTimeoutDegradation:
+    """Tests for _reflect_with_retry degradation when timeout retries exhausted."""
+
+    def test_degradation_on_timeout_exhausted(
+        self, wiki_dir: Path
+    ) -> None:
+        """_reflect_with_retry applies degradation when _invoke_llm raises ProviderTimeoutError."""
+        provider = MagicMock()
+        provider.invoke.side_effect = ProviderTimeoutError("timeout")
+        # halt on exhaust + is_retry=True → decision should be halt
+        config = TwinProviderConfig(
+            enabled=True, timeout_retries=2,
+            retry_exhausted_action="halt",
+        )
+        twin = Twin(config=config, wiki_dir=wiki_dir, provider=provider)
+
+        result = twin._reflect_with_retry("prompt", is_retry=True, epic_id=None)
+        assert result.decision == "halt"
+
+
+class TestReflectE2eTimeoutRetry:
+    """End-to-end test: reflect with timeout on first attempt, retry succeeds."""
+
+    def test_timeout_then_success_returns_valid_result(
+        self, wiki_dir: Path
+    ) -> None:
+        """reflect() end-to-end: timeout on first attempt, retry succeeds."""
+        provider = MagicMock()
+        provider.invoke.side_effect = [
+            ProviderTimeoutError("timeout"),
+            make_yaml_output(decision="continue", rationale="Recovered after timeout"),
+        ]
+        config = TwinProviderConfig(enabled=True, timeout_retries=2)
+        twin = Twin(config=config, wiki_dir=wiki_dir, provider=provider)
+
+        record = ExecutionRecord(
+            phase="dev_story", mission="m",
+            llm_output="output", self_audit="- Audit OK",
+            success=True, duration_ms=100, error=None,
+        )
+        result = twin.reflect(record)
+        assert result.decision == "continue"
+        assert "Recovered after timeout" in result.rationale
