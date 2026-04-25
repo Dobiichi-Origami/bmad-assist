@@ -1,4 +1,4 @@
-## ADDED Requirements
+## MODIFIED Requirements
 
 ### Requirement: Twin LLM calls use invoke_with_timeout_retry
 The `Twin._invoke_llm()` method SHALL route its provider invocation through `invoke_with_timeout_retry()` instead of calling `self._provider.invoke()` directly. This ensures that `ProviderTimeoutError` is retried according to `TwinProviderConfig.timeout_retries` before the error propagates to `_reflect_with_retry`.

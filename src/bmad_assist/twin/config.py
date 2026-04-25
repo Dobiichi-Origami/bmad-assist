@@ -1,7 +1,7 @@
 """Twin provider configuration for the Digital Twin.
 
 Defines TwinProviderConfig with provider/model/enabled/max_retries/
-retry_exhausted_action, and integrates with the providers config system.
+retry_exhausted_action/timeout, and integrates with the providers config system.
 """
 
 from __future__ import annotations
@@ -28,6 +28,8 @@ class TwinProviderConfig(BaseModel):
             "halt" stops the loop; "continue" proceeds to next phase.
         audit_extract_model: Model for LLM-based self-audit extraction.
             None falls back to the main model.
+        timeout: Timeout duration in seconds for Twin LLM provider invocations.
+            Default 300s matches the provider's hardcoded DEFAULT_TIMEOUT.
     """
 
     model_config = ConfigDict(frozen=True)
@@ -61,4 +63,8 @@ class TwinProviderConfig(BaseModel):
         description="Max timeout retry attempts for Twin LLM calls. "
         "None disables retry (first ProviderTimeoutError propagates). "
         "Separate from max_retries which controls the RETRY decision loop.",
+    )
+    timeout: int = Field(
+        default=300,
+        description="Timeout duration in seconds for Twin LLM calls (reflect and audit_extract)",
     )

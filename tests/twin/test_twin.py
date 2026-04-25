@@ -1108,6 +1108,62 @@ class TestExtractSelfAuditTimeoutRetry:
         assert result is None
 
 
+class TestInvokeLlmPassesTimeout:
+    """Tests verifying _invoke_llm passes config.timeout to invoke_with_timeout_retry."""
+
+    def test_default_timeout_passed(self, wiki_dir: Path) -> None:
+        """_invoke_llm passes default timeout=300 to provider.invoke."""
+        provider = MagicMock()
+        provider.invoke.return_value = "LLM output"
+        config = TwinProviderConfig(enabled=True)
+        twin = Twin(config=config, wiki_dir=wiki_dir, provider=provider)
+
+        twin._invoke_llm("test prompt")
+        provider.invoke.assert_called_once()
+        call_kwargs = provider.invoke.call_args.kwargs
+        assert call_kwargs.get("timeout") == 300
+
+    def test_custom_timeout_passed(self, wiki_dir: Path) -> None:
+        """_invoke_llm passes custom timeout=600 to provider.invoke."""
+        provider = MagicMock()
+        provider.invoke.return_value = "LLM output"
+        config = TwinProviderConfig(enabled=True, timeout=600)
+        twin = Twin(config=config, wiki_dir=wiki_dir, provider=provider)
+
+        twin._invoke_llm("test prompt")
+        provider.invoke.assert_called_once()
+        call_kwargs = provider.invoke.call_args.kwargs
+        assert call_kwargs.get("timeout") == 600
+
+
+class TestExtractSelfAuditLlmPassesTimeout:
+    """Tests verifying _extract_self_audit_llm passes config.timeout to invoke_with_timeout_retry."""
+
+    def test_default_timeout_passed(self, wiki_dir: Path) -> None:
+        """_extract_self_audit_llm passes default timeout=300 to provider.invoke."""
+        provider = MagicMock()
+        provider.invoke.return_value = "```yaml\nfound: true\ncontent: |\n  - Audit text\n```"
+        config = TwinProviderConfig(enabled=True)
+        twin = Twin(config=config, wiki_dir=wiki_dir, provider=provider)
+
+        twin._extract_self_audit_llm("Some output")
+        provider.invoke.assert_called_once()
+        call_kwargs = provider.invoke.call_args.kwargs
+        assert call_kwargs.get("timeout") == 300
+
+    def test_custom_timeout_passed(self, wiki_dir: Path) -> None:
+        """_extract_self_audit_llm passes custom timeout=600 to provider.invoke."""
+        provider = MagicMock()
+        provider.invoke.return_value = "```yaml\nfound: true\ncontent: |\n  - Audit text\n```"
+        config = TwinProviderConfig(enabled=True, timeout=600)
+        twin = Twin(config=config, wiki_dir=wiki_dir, provider=provider)
+
+        twin._extract_self_audit_llm("Some output")
+        provider.invoke.assert_called_once()
+        call_kwargs = provider.invoke.call_args.kwargs
+        assert call_kwargs.get("timeout") == 600
+
+
 class TestReflectWithRetryTimeoutDegradation:
     """Tests for _reflect_with_retry degradation when timeout retries exhausted."""
 

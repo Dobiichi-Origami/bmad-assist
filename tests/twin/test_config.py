@@ -43,6 +43,11 @@ class TestTwinProviderConfigDefaults:
         config = TwinProviderConfig()
         assert config.timeout_retries == 2
 
+    def test_default_timeout(self) -> None:
+        """Default timeout is 300."""
+        config = TwinProviderConfig()
+        assert config.timeout == 300
+
 
 class TestTwinProviderConfigValidation:
     """Verify TwinProviderConfig validation rules."""
@@ -56,6 +61,11 @@ class TestTwinProviderConfigValidation:
         """Custom timeout_retries=5 is accepted."""
         config = TwinProviderConfig(timeout_retries=5)
         assert config.timeout_retries == 5
+
+    def test_timeout_custom_value(self) -> None:
+        """Custom timeout=600 is accepted."""
+        config = TwinProviderConfig(timeout=600)
+        assert config.timeout == 600
 
     def test_invalid_retry_exhausted_action(self) -> None:
         """retry_exhausted_action must be 'halt' or 'continue'."""

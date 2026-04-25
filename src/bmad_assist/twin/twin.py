@@ -233,6 +233,7 @@ class Twin:
                 phase_name="twin_audit_extract",
                 prompt=prompt,
                 model=model,
+                timeout=self.config.timeout,
             )
             if hasattr(raw, "stdout"):
                 raw = raw.stdout
@@ -305,6 +306,7 @@ class Twin:
             phase_name="twin_reflect",
             prompt=prompt,
             model=self.config.model,
+            timeout=self.config.timeout,
         )
         if hasattr(result, "stdout"):
             return result.stdout

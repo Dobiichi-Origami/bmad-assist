@@ -50,6 +50,7 @@ providers:
   #   retry_exhausted_action: halt  # halt | continue
   #   audit_extract_model: haiku    # Model for self-audit extraction (None = use main model)
   #   timeout_retries: 2            # Max timeout retry attempts for Twin LLM calls (None = no retry)
+  #   timeout: 300                  # Timeout in seconds for Twin LLM calls (reflect + audit_extract)
 
   # Additional providers for multi-provider scenarios
   multi:
