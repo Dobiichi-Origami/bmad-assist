@@ -47,7 +47,7 @@ from bmad_assist.benchmarking import (
 )
 from bmad_assist.compiler import compile_workflow
 from bmad_assist.compiler.types import CompilerContext
-from bmad_assist.core.config import Config, get_phase_retries, get_phase_timeout
+from bmad_assist.core.config import Config, get_helper_timeout, get_phase_retries, get_phase_timeout
 from bmad_assist.core.config.loaders import parse_parallel_delay
 from bmad_assist.core.config.models.providers import (
     MultiProviderConfig,
@@ -878,7 +878,7 @@ async def run_validation_phase(
                 epic_num=epic_num,
                 story_num=story_num,
                 run_timestamp=run_timestamp,
-                timeout=timeout,
+                timeout=get_helper_timeout(config, "benchmarking_extraction"),
                 config=config,
             )
 

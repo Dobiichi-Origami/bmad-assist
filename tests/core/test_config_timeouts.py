@@ -7,9 +7,11 @@ import pytest
 
 from bmad_assist.core.config import (
     Config,
+    HelperTimeoutsConfig,
     MasterProviderConfig,
     ProviderConfig,
     TimeoutsConfig,
+    get_helper_timeout,
     get_phase_retries,
     get_phase_timeout,
 )
@@ -254,3 +256,96 @@ class TestGetPhaseRetries:
         config = self._make_config(timeouts=tc)
 
         assert get_phase_retries(config, "dev_story") == 0
+
+
+class TestHelperTimeoutsConfig:
+    """Tests for HelperTimeoutsConfig model."""
+
+    def test_default_values(self) -> None:
+        """HelperTimeoutsConfig uses sensible defaults."""
+        hc = HelperTimeoutsConfig()
+        assert hc.default == 60
+        assert hc.qa_summary is None
+        assert hc.testarch_eligibility is None
+        assert hc.strategic_context is None
+        assert hc.stack_detector is None
+        assert hc.benchmarking_extraction is None
+        assert hc.synthesis_extraction is None
+
+    def test_get_timeout_with_scenario_override(self) -> None:
+        """get_timeout returns scenario-specific value when set."""
+        hc = HelperTimeoutsConfig(default=60, strategic_context=180)
+        assert hc.get_timeout("strategic_context") == 180
+        assert hc.get_timeout("qa_summary") == 60  # Falls back to default
+
+    def test_get_timeout_fallback_to_default(self) -> None:
+        """get_timeout returns default when no scenario override is set."""
+        hc = HelperTimeoutsConfig(default=90)
+        assert hc.get_timeout("qa_summary") == 90
+        assert hc.get_timeout("testarch_eligibility") == 90
+        assert hc.get_timeout("strategic_context") == 90
+
+    def test_get_timeout_hyphen_normalization(self) -> None:
+        """get_timeout normalizes hyphens to underscores."""
+        hc = HelperTimeoutsConfig(default=60, stack_detector=45)
+        assert hc.get_timeout("stack-detector") == 45
+        assert hc.get_timeout("stack_detector") == 45
+
+    def test_minimum_timeout_validation(self) -> None:
+        """Timeout values must be at least 10 seconds."""
+        with pytest.raises(ValueError):
+            HelperTimeoutsConfig(default=5)  # Below minimum
+        with pytest.raises(ValueError):
+            HelperTimeoutsConfig(qa_summary=5)  # Below minimum
+
+
+class TestGetHelperTimeout:
+    """Tests for get_helper_timeout loader function."""
+
+    def _make_config(
+        self,
+        timeout: int = 300,
+        timeouts: TimeoutsConfig | None = None,
+    ) -> Config:
+        """Create a minimal Config for testing."""
+        return Config(
+            providers=ProviderConfig(
+                master=MasterProviderConfig(provider="claude", model="opus")
+            ),
+            timeout=timeout,
+            timeouts=timeouts,
+        )
+
+    def test_with_timeouts_config(self) -> None:
+        """get_helper_timeout delegates to config.timeouts.helper when set."""
+        hc = HelperTimeoutsConfig(default=60, strategic_context=180)
+        tc = TimeoutsConfig(default=3600, helper=hc)
+        config = self._make_config(timeouts=tc)
+
+        assert get_helper_timeout(config, "strategic_context") == 180
+        assert get_helper_timeout(config, "qa_summary") == 60
+
+    def test_without_timeouts_config_legacy_fallback(self) -> None:
+        """get_helper_timeout returns legacy defaults when timeouts is None."""
+        config = self._make_config(timeouts=None)
+
+        # Legacy values match original hardcoded timeouts
+        assert get_helper_timeout(config, "qa_summary") == 60
+        assert get_helper_timeout(config, "testarch_eligibility") == 60
+        assert get_helper_timeout(config, "strategic_context") == 120
+        assert get_helper_timeout(config, "stack_detector") == 30
+        assert get_helper_timeout(config, "benchmarking_extraction") == 120
+        assert get_helper_timeout(config, "synthesis_extraction") == 60
+
+    def test_unknown_scenario_legacy_fallback(self) -> None:
+        """get_helper_timeout returns 60 for unknown scenarios in legacy mode."""
+        config = self._make_config(timeouts=None)
+        assert get_helper_timeout(config, "unknown_scenario") == 60
+
+    def test_hyphen_normalization_in_loader(self) -> None:
+        """get_helper_timeout normalizes hyphens in scenario names."""
+        hc = HelperTimeoutsConfig(default=60, stack_detector=45)
+        tc = TimeoutsConfig(default=3600, helper=hc)
+        config = self._make_config(timeouts=tc)
+
+        assert get_helper_timeout(config, "stack-detector") == 45

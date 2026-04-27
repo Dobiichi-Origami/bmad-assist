@@ -126,13 +126,14 @@ def _detect_via_llm(
     # Invoke helper
     try:
         from bmad_assist.providers import get_provider
+        from bmad_assist.core.config import get_config, get_helper_timeout
 
         provider = get_provider(helper_config.provider)
         result = provider.invoke(
             prompt,
             model=helper_config.model,
             settings_file=helper_config.settings_path,
-            timeout=30,
+            timeout=get_helper_timeout(get_config(), "stack_detector"),
             disable_tools=True,
         )
     except Exception as e:

@@ -9,7 +9,7 @@ from __future__ import annotations
 import logging
 from pathlib import Path
 
-from bmad_assist.core.config import Config
+from bmad_assist.core.config import Config, get_helper_timeout
 from bmad_assist.providers import get_provider
 
 logger = logging.getLogger(__name__)
@@ -152,7 +152,7 @@ def generate_summary(
     result = provider.invoke(
         prompt,
         model=model_name,
-        timeout=60,  # Short timeout for summary generation
+        timeout=get_helper_timeout(config, "qa_summary"),
         disable_tools=True,  # No tools needed for text generation
     )
 

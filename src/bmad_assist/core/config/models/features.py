@@ -150,6 +150,87 @@ class CompilerConfig(BaseModel):
     )
 
 
+class HelperTimeoutsConfig(BaseModel):
+    """Per-scenario timeout configuration for helper/auxiliary LLM calls.
+
+    Allows configuring different timeouts for different helper LLM scenarios
+    (QA summary, testarch eligibility, etc.). If a scenario-specific timeout
+    is not set, falls back to default.
+
+    Attributes:
+        default: Default timeout for all helper scenarios (seconds).
+        qa_summary: Timeout for QA summary generation.
+        testarch_eligibility: Timeout for testarch eligibility assessment.
+        strategic_context: Timeout for strategic context compression.
+        stack_detector: Timeout for tech stack detection.
+        benchmarking_extraction: Timeout for benchmarking metrics extraction.
+        synthesis_extraction: Timeout ceiling for synthesis pre-extraction per call.
+
+    """
+
+    model_config = ConfigDict(frozen=True)
+
+    default: int = Field(
+        default=60,
+        ge=10,
+        description="Default timeout for all helper scenarios in seconds",
+        json_schema_extra={"security": "safe", "ui_widget": "number", "unit": "s"},
+    )
+    qa_summary: int | None = Field(
+        default=None,
+        ge=10,
+        description="Timeout for QA summary generation (None = use default)",
+        json_schema_extra={"security": "safe", "ui_widget": "number", "unit": "s"},
+    )
+    testarch_eligibility: int | None = Field(
+        default=None,
+        ge=10,
+        description="Timeout for testarch eligibility assessment (None = use default)",
+        json_schema_extra={"security": "safe", "ui_widget": "number", "unit": "s"},
+    )
+    strategic_context: int | None = Field(
+        default=None,
+        ge=10,
+        description="Timeout for strategic context compression (None = use default)",
+        json_schema_extra={"security": "safe", "ui_widget": "number", "unit": "s"},
+    )
+    stack_detector: int | None = Field(
+        default=None,
+        ge=10,
+        description="Timeout for tech stack detection (None = use default)",
+        json_schema_extra={"security": "safe", "ui_widget": "number", "unit": "s"},
+    )
+    benchmarking_extraction: int | None = Field(
+        default=None,
+        ge=10,
+        description="Timeout for benchmarking metrics extraction (None = use default)",
+        json_schema_extra={"security": "safe", "ui_widget": "number", "unit": "s"},
+    )
+    synthesis_extraction: int | None = Field(
+        default=None,
+        ge=10,
+        description="Timeout ceiling for synthesis pre-extraction per call (None = use default)",
+        json_schema_extra={"security": "safe", "ui_widget": "number", "unit": "s"},
+    )
+
+    def get_timeout(self, scenario: str) -> int:
+        """Get timeout for a specific helper scenario.
+
+        Args:
+            scenario: Scenario name (e.g., 'qa_summary', 'stack_detector').
+                      Hyphens are normalized to underscores.
+
+        Returns:
+            Scenario-specific timeout if set, otherwise default timeout.
+
+        """
+        normalized = scenario.replace("-", "_")
+        scenario_timeout: int | None = getattr(self, normalized, None)
+        if scenario_timeout is not None:
+            return scenario_timeout
+        return self.default
+
+
 class TimeoutsConfig(BaseModel):
     """Per-phase timeout configuration.
 
@@ -302,6 +383,10 @@ class TimeoutsConfig(BaseModel):
         ge=0,
         description="Retry provider invocation on timeout (None = skip retry, 0 = infinite, N = specific count)",
         json_schema_extra={"security": "safe", "ui_widget": "number"},
+    )
+    helper: HelperTimeoutsConfig = Field(
+        default_factory=HelperTimeoutsConfig,
+        description="Per-scenario timeout configuration for helper/auxiliary LLM calls",
     )
     idle_timeout: int | None = Field(
         default=None,

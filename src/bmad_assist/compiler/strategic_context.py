@@ -39,7 +39,7 @@ from bmad_assist.compiler.types import CompilerContext
 
 # Import project tree service
 try:
-    from bmad_assist.core.config.loaders import get_config
+    from bmad_assist.core.config.loaders import get_config, get_helper_timeout
     from bmad_assist.core.paths import get_paths
     from bmad_assist.core.project_tree import ProjectTreeService
     _PROJECT_TREE_AVAILABLE = True
@@ -267,7 +267,7 @@ def _compress_or_truncate(
     original_tokens = estimate_tokens(content)
 
     try:
-        from bmad_assist.core.config.loaders import get_config
+        from bmad_assist.core.config.loaders import get_config, get_helper_timeout
         from bmad_assist.providers.registry import get_provider
 
         config = get_config()
@@ -300,7 +300,7 @@ def _compress_or_truncate(
             f"Output ONLY the compressed document, no preamble.\n\n"
             f"---\n{content}\n---"
         )
-        result = provider.invoke(prompt, model=helper.model, timeout=120)
+        result = provider.invoke(prompt, model=helper.model, timeout=get_helper_timeout(config, "strategic_context"))
         compressed = provider.parse_output(result).strip()
         actual = estimate_tokens(compressed)
 

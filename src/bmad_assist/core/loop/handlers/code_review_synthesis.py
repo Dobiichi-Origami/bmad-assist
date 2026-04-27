@@ -30,6 +30,7 @@ from bmad_assist.code_review.orchestrator import (
 from bmad_assist.compiler import compile_workflow
 from bmad_assist.compiler.types import CompilerContext
 from bmad_assist.core.exceptions import ConfigError
+from bmad_assist.core.config import get_helper_timeout
 from bmad_assist.core.io import get_original_cwd
 from bmad_assist.core.loop.handlers.base import BaseHandler, check_for_edit_failures
 from bmad_assist.core.loop.types import PhaseResult
@@ -464,10 +465,9 @@ class CodeReviewSynthesisHandler(BaseHandler):
                 expected_calls = (
                     math.ceil(len(anonymized_reviews) / synthesis_config.extraction_batch_size) + 2
                 )
-                per_call_timeout = max(
-                    synthesis_config.max_compression_timeout // max(expected_calls, 1),
-                    30,
-                )
+                budget_per_call = synthesis_config.max_compression_timeout // max(expected_calls, 1)
+                helper_ext_timeout = get_helper_timeout(self.config, "synthesis_extraction")
+                per_call_timeout = max(min(budget_per_call, helper_ext_timeout), 30)
 
                 def invoke_fn(prompt: str) -> str:
                     res = invoke_with_timeout_retry(

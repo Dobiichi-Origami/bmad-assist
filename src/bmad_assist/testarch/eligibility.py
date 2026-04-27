@@ -309,6 +309,7 @@ class ATDDEligibilityDetector:
         from pydantic import ValidationError
 
         from bmad_assist.core import get_config
+        from bmad_assist.core.config import get_helper_timeout
         from bmad_assist.core.exceptions import (
             ConfigError,
             ProviderError,
@@ -329,7 +330,7 @@ class ATDDEligibilityDetector:
             result = provider.invoke(
                 prompt,
                 model=config.providers.helper.model,
-                timeout=60,
+                timeout=get_helper_timeout(config, "testarch_eligibility"),
                 disable_tools=True,
                 no_cache=True,
             )

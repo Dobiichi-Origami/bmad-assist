@@ -572,6 +572,38 @@ def get_phase_idle_timeout(config: Config, phase: str) -> int | None:
     return None
 
 
+# Legacy fallback defaults for helper timeouts when config.timeouts is not set.
+_LEGACY_HELPER_TIMEOUTS: dict[str, int] = {
+    "qa_summary": 60,
+    "testarch_eligibility": 60,
+    "strategic_context": 120,
+    "stack_detector": 30,
+    "benchmarking_extraction": 120,
+    "synthesis_extraction": 60,
+}
+
+
+def get_helper_timeout(config: Config, scenario: str) -> int:
+    """Get timeout for a specific helper LLM scenario.
+
+    Provides backward-compatible timeout resolution:
+    1. If config.timeouts is set, use scenario-specific or helper default timeout
+    2. Otherwise, fall back to legacy hardcoded defaults
+
+    Args:
+        config: Application configuration.
+        scenario: Scenario name (e.g., 'qa_summary', 'stack_detector').
+                  Hyphens are normalized to underscores.
+
+    Returns:
+        Timeout in seconds for the specified helper scenario.
+
+    """
+    if config.timeouts is not None:
+        return config.timeouts.helper.get_timeout(scenario)
+    return _LEGACY_HELPER_TIMEOUTS.get(scenario.replace("-", "_"), 60)
+
+
 def reload_config(project_path: Path | None = None) -> Config:
     """Reload configuration singleton without restart.
 

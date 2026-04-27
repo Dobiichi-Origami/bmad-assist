@@ -169,7 +169,19 @@ timeouts:
   tea_ci: 600
   tea_nfr_assess: 600
   trace: 600
+
+  # Helper LLM call timeouts (auxiliary tasks, inherit helper.default when unset)
+  helper:
+    default: 60                     # Default for all helper scenarios
+    # qa_summary: 60               # QA summary generation
+    # testarch_eligibility: 60     # Testarch eligibility assessment
+    # strategic_context: 120       # Strategic context compression
+    # stack_detector: 30           # Tech stack detection
+    # benchmarking_extraction: 120 # Benchmarking metrics extraction
+    # synthesis_extraction: 60     # Synthesis pre-extraction per-call ceiling
 ```
+
+**Helper timeouts (`timeouts.helper`):** Control timeouts for auxiliary/helper LLM calls (summaries, extraction, detection, etc.). When `timeouts` is set but a specific scenario is not configured, it falls back to `helper.default` (60s). Without any `timeouts` section, legacy fallback preserves the original hardcoded values per scenario. Note: `strategic_context` legacy default is 120s and `stack_detector` is 30s — if you set `timeouts.helper` but don't override these, they will use `helper.default` (60s) instead.
 
 **Stall detection (`idle_timeout`):** When a provider process stops producing stdout output for longer than `idle_timeout` seconds, it is automatically terminated and retried (if `retries` is configured). This catches providers that hang silently instead of making progress. Default is `None` (disabled). Minimum value is 30 seconds; recommended range is 120–300 seconds depending on your providers and task complexity.
 

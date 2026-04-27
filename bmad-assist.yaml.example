@@ -25,6 +25,18 @@ timeouts:
   qa_plan_generate: 1200        # 20m
   qa_plan_execute: 3600         # 1h (Playwright!)
   qa_remediate: 3600            # 1h (LLM fixes + re-test)
+
+  # Helper LLM call timeouts (seconds) — auxiliary tasks like summaries, extraction, detection
+  # When timeouts section is set, unset scenarios inherit helper.default (60s).
+  # Without timeouts section, legacy fallback preserves original hardcoded values.
+  helper:
+    default: 60                    # Default for all helper scenarios
+    # qa_summary: 60              # QA summary generation (legacy: 60s)
+    # testarch_eligibility: 60    # Testarch eligibility assessment (legacy: 60s)
+    # strategic_context: 120      # Strategic context compression (legacy: 120s)
+    # stack_detector: 30          # Tech stack detection (legacy: 30s)
+    # benchmarking_extraction: 120 # Benchmarking metrics extraction (legacy: 120s)
+    # synthesis_extraction: 60    # Synthesis pre-extraction per-call ceiling (legacy: 60s)
   
 providers:
   # Default provider used for single-LLM phases when no phase_models specified
