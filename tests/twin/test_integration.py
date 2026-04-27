@@ -466,29 +466,6 @@ class TestTruncationInReflectFlow:
         # The reflect prompt (second call) should contain truncated output
         assert "TRUNCATED" in captured_prompt[1]
 
-    def test_long_files_diff_truncated(self, tmp_path: Path) -> None:
-        """Long files_diff is truncated before being included in prompt."""
-        wiki_dir = init_wiki(tmp_path)
-        provider = MagicMock()
-        captured_prompt = []
-        def capture_invoke(prompt: str, **kwargs) -> str:
-            captured_prompt.append(prompt)
-            return make_yaml_output(decision="continue", rationale="ok")
-        provider.invoke = capture_invoke
-
-        twin = Twin(config=TwinProviderConfig(enabled=True), wiki_dir=wiki_dir, provider=provider)
-        long_diff = "B" * 600_000
-        record = ExecutionRecord(
-            phase="dev_story", mission="Build", llm_output="short output",
-            self_audit=None, success=True, duration_ms=5000, error=None,
-            files_diff=long_diff,
-        )
-        twin.reflect(record)
-        # self_audit=None triggers extraction call first, then the main reflect call
-        assert len(captured_prompt) == 2
-        # The reflect prompt (second call) should contain truncated diff
-        assert "TRUNCATED" in captured_prompt[1]
-
 
 # ---------------------------------------------------------------------------
 # YAML tolerance in reflect flow

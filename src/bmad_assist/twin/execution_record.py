@@ -36,7 +36,6 @@ class ExecutionRecord:
         error: Error message if the phase failed, otherwise None.
         phase_outputs: Structured outputs produced by the phase.
         files_modified: List of file paths changed during this phase.
-        files_diff: Full git diff output for Twin cross-validation.
     """
 
     phase: str
@@ -48,7 +47,6 @@ class ExecutionRecord:
     error: str | None
     phase_outputs: dict[str, Any] = field(default_factory=dict)
     files_modified: list[str] = field(default_factory=list)
-    files_diff: str = ""
 
 
 # ---------------------------------------------------------------------------
@@ -94,9 +92,9 @@ def build_execution_record(
 ) -> ExecutionRecord:
     """Construct an ExecutionRecord from phase execution state and result.
 
-    Captures git diff for files_modified and files_diff if project_path
-    is provided. Does NOT truncate llm_output — truncation is handled
-    separately by prepare_llm_output.
+    Captures changed files via git status --porcelain if project_path
+    is provided and success=True. Does NOT truncate llm_output —
+    truncation is handled separately by prepare_llm_output.
 
     Args:
         phase: Phase name that was executed.
@@ -106,7 +104,7 @@ def build_execution_record(
         duration_ms: Wall-clock execution time in milliseconds.
         error: Error message if failed, else None.
         phase_outputs: Structured outputs from the phase.
-        project_path: Project root for git diff capture.
+        project_path: Project root for git status capture.
 
     Returns:
         Populated ExecutionRecord.
@@ -114,10 +112,9 @@ def build_execution_record(
     self_audit = format_self_audit(llm_output)
 
     files_modified: list[str] = []
-    files_diff = ""
 
     if project_path is not None and success:
-        files_modified, files_diff = _capture_git_diff(project_path)
+        files_modified = _capture_files_modified(project_path)
 
     return ExecutionRecord(
         phase=phase,
@@ -129,40 +126,42 @@ def build_execution_record(
         error=error,
         phase_outputs=phase_outputs or {},
         files_modified=files_modified,
-        files_diff=files_diff,
     )
 
 
-def _capture_git_diff(project_path: Path) -> tuple[list[str], str]:
-    """Capture git diff (full) and name-only list for current changes.
+def _capture_files_modified(project_path: Path) -> list[str]:
+    """Capture all changed file paths using git status --porcelain.
 
-    Returns (files_modified, files_diff) tuple.
+    Covers tracked modifications, staged changes, and untracked new files.
+    Strips the XY status prefix; only the file path is stored.
+    Handles renames (takes new path) and quoted filenames.
+
+    Returns:
+        List of file paths relative to project root.
     """
     try:
-        # Get full diff
-        diff_result = subprocess.run(
-            ["git", "diff"],
-            cwd=str(project_path),
-            capture_output=True,
-            text=True,
-            timeout=30,
-        )
-        files_diff = diff_result.stdout
-
-        # Get name-only list
-        name_result = subprocess.run(
-            ["git", "diff", "--name-only"],
+        result = subprocess.run(
+            ["git", "status", "--porcelain"],
             cwd=str(project_path),
             capture_output=True,
             text=True,
             timeout=10,
         )
-        files_modified = [
-            line.strip() for line in name_result.stdout.strip().split("\n") if line.strip()
-        ]
-
-        return files_modified, files_diff
+        files: list[str] = []
+        for line in result.stdout.rstrip().split("\n"):
+            if not line.strip():
+                continue
+            # XY status prefix is 2 chars + space; handle rename format "XY old -> new"
+            entry = line[3:]  # strip "XY "
+            if " -> " in entry:
+                # Rename: take the new path
+                entry = entry.split(" -> ", 1)[1]
+            # Strip surrounding quotes if present
+            entry = entry.strip().strip('"')
+            if entry:
+                files.append(entry)
+        return files
 
     except (subprocess.TimeoutExpired, FileNotFoundError, OSError) as e:
-        logger.warning("Failed to capture git diff: %s", e)
-        return [], ""
+        logger.warning("Failed to capture git status: %s", e)
+        return []

@@ -178,7 +178,6 @@ class Twin:
 
         # Prepare LLM output with smart truncation
         prepared_output = prepare_llm_output(record.llm_output)
-        prepared_diff = prepare_llm_output(record.files_diff) if record.files_diff else ""
 
         # Build reflect prompt
         prompt = build_reflect_prompt(
@@ -200,8 +199,6 @@ class Twin:
         # (The prompt template doesn't include the full output directly;
         #  it's assembled here by appending the execution details)
         full_prompt = prompt + f"\n\n# Full Execution Output (prepared)\n{prepared_output}\n"
-        if prepared_diff:
-            full_prompt += f"\n\n# Git Diff (prepared)\n{prepared_diff}\n"
 
         # Call LLM with retry on parse failure
         return self._reflect_with_retry(full_prompt, is_retry, epic_id)
