@@ -9,6 +9,7 @@ from bmad_assist.git.committer import (
     _summarize_changes,
     generate_commit_message,
     get_modified_files,
+    stash_working_changes,
 )
 
 
@@ -211,3 +212,145 @@ class TestCommitBodyDirectoryGrouping:
         body = msg.split("\n\n", 1)[1]
         assert "src/: 3 files" in body
         assert "docs/: 1 file" in body
+
+
+class TestStashWorkingChanges:
+    """Tests for stash_working_changes selective stash logic."""
+
+    def test_preserves_experience_files_by_default(self, monkeypatch, tmp_path):
+        """Experience files should NOT be stashed — they survive retry."""
+        porcelain = (
+            " M src/main.ts\n"
+            " M _bmad-output/implementation-artifacts/experiences/patterns.md\n"
+            " M _bmad-output/validation.md\n"
+        )
+        calls = []
+
+        def mock_run_git(args, cwd):
+            calls.append(args)
+            if args[0] == "status":
+                return (0, porcelain, "")
+            # stash push
+            return (0, "Saved working directory", "")
+
+        monkeypatch.setattr("bmad_assist.git.committer._run_git", mock_run_git)
+        result = stash_working_changes(tmp_path)
+        assert result is True
+
+        # The stash push call should include src/ and _bmad-output/validation.md
+        # but NOT the experiences/ file
+        stash_call = calls[-1]
+        assert "stash" in stash_call
+        assert "push" in stash_call
+        assert "src/main.ts" in stash_call
+        assert "_bmad-output/validation.md" in stash_call
+        assert "_bmad-output/implementation-artifacts/experiences/patterns.md" not in stash_call
+
+    def test_custom_keep_prefixes(self, monkeypatch, tmp_path):
+        """Caller can specify different keep_prefixes."""
+        porcelain = " M src/a.py\n M docs/guide.md\n M config.yaml\n"
+        calls = []
+
+        def mock_run_git(args, cwd):
+            calls.append(args)
+            if args[0] == "status":
+                return (0, porcelain, "")
+            return (0, "Saved working directory", "")
+
+        monkeypatch.setattr("bmad_assist.git.committer._run_git", mock_run_git)
+        result = stash_working_changes(tmp_path, keep_prefixes=("docs/",))
+        assert result is True
+
+        stash_call = calls[-1]
+        assert "src/a.py" in stash_call
+        assert "config.yaml" in stash_call
+        assert "docs/guide.md" not in stash_call
+
+    def test_no_stashable_changes_returns_true(self, monkeypatch, tmp_path):
+        """If only experience files changed, stash is a no-op and returns True."""
+        porcelain = " M _bmad-output/implementation-artifacts/experiences/patterns.md\n"
+        calls = []
+
+        def mock_run_git(args, cwd):
+            calls.append(args)
+            return (0, porcelain, "")
+
+        monkeypatch.setattr("bmad_assist.git.committer._run_git", mock_run_git)
+        result = stash_working_changes(tmp_path)
+        assert result is True
+        # Only status call, no stash push
+        assert len(calls) == 1
+        assert calls[0][0] == "status"
+
+    def test_empty_working_dir_returns_true(self, monkeypatch, tmp_path):
+        """Clean working directory — nothing to stash."""
+        calls = []
+
+        def mock_run_git(args, cwd):
+            calls.append(args)
+            return (0, "", "")
+
+        monkeypatch.setattr("bmad_assist.git.committer._run_git", mock_run_git)
+        result = stash_working_changes(tmp_path)
+        assert result is True
+        assert len(calls) == 1  # Only status call
+
+    def test_git_status_failure_returns_false(self, monkeypatch, tmp_path):
+        """If git status fails, return False."""
+        monkeypatch.setattr(
+            "bmad_assist.git.committer._run_git",
+            lambda args, cwd: (1, "", "fatal: not a git repository"),
+        )
+        result = stash_working_changes(tmp_path)
+        assert result is False
+
+    def test_git_stash_push_failure_returns_false(self, monkeypatch, tmp_path):
+        """If git stash push fails, return False."""
+        porcelain = " M src/main.ts\n"
+
+        def mock_run_git(args, cwd):
+            if args[0] == "status":
+                return (0, porcelain, "")
+            return (1, "", "error: stash failed")
+
+        monkeypatch.setattr("bmad_assist.git.committer._run_git", mock_run_git)
+        result = stash_working_changes(tmp_path)
+        assert result is False
+
+    def test_strips_quoted_filenames(self, monkeypatch, tmp_path):
+        """Git quotes filenames with unusual chars — quotes should be stripped."""
+        porcelain = ' M "src/weird name.ts"\n M src/normal.ts\n'
+        calls = []
+
+        def mock_run_git(args, cwd):
+            calls.append(args)
+            if args[0] == "status":
+                return (0, porcelain, "")
+            return (0, "Saved working directory", "")
+
+        monkeypatch.setattr("bmad_assist.git.committer._run_git", mock_run_git)
+        result = stash_working_changes(tmp_path)
+        assert result is True
+
+        stash_call = calls[-1]
+        # Quotes should be stripped from the path
+        assert "src/weird name.ts" in stash_call
+        assert "src/normal.ts" in stash_call
+
+    def test_porcelain_renamed_file_format(self, monkeypatch, tmp_path):
+        """Porcelain format for renames is 'XY old -> new' — new name used."""
+        porcelain = "R  src/old.ts -> src/new.ts\n M src/other.ts\n"
+        calls = []
+
+        def mock_run_git(args, cwd):
+            calls.append(args)
+            if args[0] == "status":
+                return (0, porcelain, "")
+            return (0, "Saved working directory", "")
+
+        monkeypatch.setattr("bmad_assist.git.committer._run_git", mock_run_git)
+        result = stash_working_changes(tmp_path)
+        assert result is True
+
+        stash_call = calls[-1]
+        assert "src/other.ts" in stash_call

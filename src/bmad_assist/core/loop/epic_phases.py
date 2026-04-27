@@ -45,8 +45,8 @@ def _execute_phase_with_twin(
     """Execute a phase with Twin guide → execute → reflect → retry cycle.
 
     Encapsulates the Twin orchestration for epic setup/teardown phases.
-    Unlike the main loop, this does NOT perform git stash on retry
-    (setup phases typically don't write files; teardown changes are final).
+    On Twin RETRY, git stash is used to roll back working directory changes
+    before re-executing the phase with a correction compass.
 
     Args:
         state: Current loop state.
@@ -132,6 +132,14 @@ def _execute_phase_with_twin(
             original_compass = compass
 
             while retry_count < max_retries:
+                # Git stash to restore working directory before RETRY
+                try:
+                    from bmad_assist.git import stash_working_changes
+
+                    stash_working_changes(project_path)
+                except Exception as e:
+                    logger.warning("Git stash failed before RETRY: %s", e)
+
                 # Format correction compass
                 correction = ""
                 if twin_result.drift_assessment and twin_result.drift_assessment.correction:
@@ -147,7 +155,7 @@ def _execute_phase_with_twin(
                     retry_count, max_retries, phase_name, correction[:100],
                 )
 
-                # Re-execute phase with correction compass (no git stash for setup/teardown)
+                # Re-execute phase with correction compass
                 retry_result = execute_phase(state, compass=full_compass)
 
                 if not retry_result.success:

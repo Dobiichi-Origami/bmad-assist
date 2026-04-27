@@ -16,7 +16,7 @@ from bmad_assist.git.branch import (
     get_epic_branch_name,
     is_git_enabled,
 )
-from bmad_assist.git.committer import auto_commit_phase
+from bmad_assist.git.committer import auto_commit_phase, stash_working_changes
 from bmad_assist.git.diff import (
     DiffQualityError,
     DiffValidationResult,
@@ -34,6 +34,7 @@ from bmad_assist.git.gitignore import (
 
 __all__ = [
     "auto_commit_phase",
+    "stash_working_changes",
     # Branch management (epic workflow)
     "ensure_epic_branch",
     "get_current_branch",

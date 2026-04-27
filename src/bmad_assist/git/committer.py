@@ -66,6 +66,72 @@ def _run_git(args: list[str], cwd: Path) -> tuple[int, str, str]:
         return 1, "", "Git not found in PATH"
 
 
+def stash_working_changes(
+    project_path: Path,
+    *,
+    keep_prefixes: tuple[str, ...] = ("_bmad-output/implementation-artifacts/experiences/",),
+) -> bool:
+    """Stash uncommitted changes to restore a clean working directory.
+
+    Used before Twin RETRY to roll back the phase output so the LLM can
+    re-execute on a clean slate.  By default, Twin experience (wiki) files
+    are kept out of the stash so that accumulated knowledge survives retry.
+
+    Args:
+        project_path: Path to git repository.
+        keep_prefixes: File path prefixes that should NOT be stashed.
+            These files are first ``git stash push --``'ed with the inverse
+            (everything else), then the remaining changes are stashed
+            normally.  Defaults to the Twin experiences directory.
+
+    Returns:
+        True if stash succeeded (or there was nothing to stash), False on error.
+
+    """
+    # Strategy: use `git stash push -- <paths>` to stash only the paths
+    # we want to roll back (everything except keep_prefixes), preserving
+    # experience files in the working tree.
+    exit_code, stdout, _ = _run_git(
+        ["status", "--porcelain", "-uall"],
+        project_path,
+    )
+    if exit_code != 0:
+        logger.warning("git status failed before selective stash")
+        return False
+
+    stash_paths: list[str] = []
+    for line in stdout.strip().split("\n"):
+        if not line:
+            continue
+        # porcelain format: XY filename
+        filepath = line[3:] if line[2] == " " else line[2:]
+        # Strip surrounding quotes (git quotes unusual filenames)
+        if filepath.startswith('"') and filepath.endswith('"'):
+            filepath = filepath[1:-1]
+        if any(filepath.startswith(p) for p in keep_prefixes):
+            continue
+        stash_paths.append(filepath)
+
+    if not stash_paths:
+        logger.debug("git stash: no stashable changes (experiences preserved)")
+        return True
+
+    # Stash only the selected paths
+    exit_code, stdout, stderr = _run_git(
+        ["stash", "push", "--", *stash_paths],
+        project_path,
+    )
+    if exit_code != 0:
+        logger.warning("git stash push failed (exit=%d): %s", exit_code, stderr.strip())
+        return False
+
+    logger.info(
+        "git stash: %d files stashed, experience files preserved",
+        len(stash_paths),
+    )
+    return True
+
+
 def get_modified_files(project_path: Path) -> list[str]:
     """Get list of modified files in the repository.
 

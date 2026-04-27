@@ -1362,13 +1362,9 @@ def _run_loop_body(
                         while retry_count < max_retries:
                             # Git stash to restore working directory
                             try:
-                                import subprocess
-                                subprocess.run(
-                                    ["git", "stash"],
-                                    cwd=str(project_path),
-                                    capture_output=True,
-                                    timeout=30,
-                                )
+                                from bmad_assist.git import stash_working_changes
+
+                                stash_working_changes(project_path)
                             except Exception as e:
                                 logger.warning("Git stash failed before RETRY: %s", e)
 
