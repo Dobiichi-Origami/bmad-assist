@@ -354,3 +354,78 @@ class TestStashWorkingChanges:
 
         stash_call = calls[-1]
         assert "src/other.ts" in stash_call
+
+    def test_untracked_files_are_staged_before_stash(self, monkeypatch, tmp_path):
+        """Untracked files (??) must be git-add'd before stash push can see them."""
+        porcelain = (
+            " M src/main.ts\n"
+            "?? f1-esports/backend/handler_test.go\n"
+            "?? f1-esports/tests/e2e/api.spec.ts\n"
+        )
+        calls = []
+
+        def mock_run_git(args, cwd):
+            calls.append(args)
+            if args[0] == "status":
+                return (0, porcelain, "")
+            return (0, "Saved working directory", "")
+
+        monkeypatch.setattr("bmad_assist.git.committer._run_git", mock_run_git)
+        result = stash_working_changes(tmp_path)
+        assert result is True
+
+        # Expect 3 calls: status, add (untracked), stash push
+        assert len(calls) == 3
+        add_call = calls[1]
+        stash_call = calls[2]
+
+        # git add should include only the untracked paths
+        assert add_call[0] == "add"
+        assert "f1-esports/backend/handler_test.go" in add_call
+        assert "f1-esports/tests/e2e/api.spec.ts" in add_call
+        assert "src/main.ts" not in add_call
+
+        # stash push should include all paths
+        assert "src/main.ts" in stash_call
+        assert "f1-esports/backend/handler_test.go" in stash_call
+        assert "f1-esports/tests/e2e/api.spec.ts" in stash_call
+
+    def test_untracked_experience_files_not_staged(self, monkeypatch, tmp_path):
+        """Untracked experience files should not be stashed or staged."""
+        porcelain = (
+            "?? _bmad-output/implementation-artifacts/experiences/patterns.md\n"
+            "?? src/new_file.ts\n"
+        )
+        calls = []
+
+        def mock_run_git(args, cwd):
+            calls.append(args)
+            if args[0] == "status":
+                return (0, porcelain, "")
+            return (0, "Saved working directory", "")
+
+        monkeypatch.setattr("bmad_assist.git.committer._run_git", mock_run_git)
+        result = stash_working_changes(tmp_path)
+        assert result is True
+
+        add_call = calls[1]
+        stash_call = calls[2]
+        assert "_bmad-output/implementation-artifacts/experiences/patterns.md" not in add_call
+        assert "_bmad-output/implementation-artifacts/experiences/patterns.md" not in stash_call
+        assert "src/new_file.ts" in add_call
+        assert "src/new_file.ts" in stash_call
+
+    def test_git_add_failure_returns_false(self, monkeypatch, tmp_path):
+        """If git add for untracked files fails, return False."""
+        porcelain = "?? src/new_file.ts\n"
+
+        def mock_run_git(args, cwd):
+            if args[0] == "status":
+                return (0, porcelain, "")
+            if args[0] == "add":
+                return (1, "", "error: add failed")
+            return (0, "", "")
+
+        monkeypatch.setattr("bmad_assist.git.committer._run_git", mock_run_git)
+        result = stash_working_changes(tmp_path)
+        assert result is False

@@ -80,9 +80,8 @@ def stash_working_changes(
     Args:
         project_path: Path to git repository.
         keep_prefixes: File path prefixes that should NOT be stashed.
-            These files are first ``git stash push --``'ed with the inverse
-            (everything else), then the remaining changes are stashed
-            normally.  Defaults to the Twin experiences directory.
+            These files are preserved in the working tree while all other
+            changes are stashed.  Defaults to the Twin experiences directory.
 
     Returns:
         True if stash succeeded (or there was nothing to stash), False on error.
@@ -100,21 +99,47 @@ def stash_working_changes(
         return False
 
     stash_paths: list[str] = []
+    untracked_paths: list[str] = []
     for line in stdout.strip().split("\n"):
         if not line:
             continue
-        # porcelain format: XY filename
+        # porcelain format: XY filename  (or XY old -> new for renames)
+        status = line[:2]
         filepath = line[3:] if line[2] == " " else line[2:]
+        # Handle renamed files: use the new path
+        if " -> " in filepath:
+            filepath = filepath.split(" -> ")[1]
         # Strip surrounding quotes (git quotes unusual filenames)
         if filepath.startswith('"') and filepath.endswith('"'):
             filepath = filepath[1:-1]
+        if not filepath:
+            continue
         if any(filepath.startswith(p) for p in keep_prefixes):
             continue
         stash_paths.append(filepath)
+        # Track untracked files — they need `git add` before stash can see them
+        if status == "??":
+            untracked_paths.append(filepath)
 
     if not stash_paths:
         logger.debug("git stash: no stashable changes (experiences preserved)")
         return True
+
+    # Stage untracked files so `git stash push -- <path>` can find them.
+    # Without this, untracked files cause "pathspec did not match any file(s)
+    # known to git" errors.
+    if untracked_paths:
+        exit_code, _, stderr = _run_git(
+            ["add", "--", *untracked_paths],
+            project_path,
+        )
+        if exit_code != 0:
+            logger.warning(
+                "git add for untracked files failed (exit=%d): %s",
+                exit_code,
+                stderr.strip(),
+            )
+            return False
 
     # Stash only the selected paths
     exit_code, stdout, stderr = _run_git(
@@ -126,8 +151,9 @@ def stash_working_changes(
         return False
 
     logger.info(
-        "git stash: %d files stashed, experience files preserved",
+        "git stash: %d files stashed (%d untracked staged first), experience files preserved",
         len(stash_paths),
+        len(untracked_paths),
     )
     return True
 
