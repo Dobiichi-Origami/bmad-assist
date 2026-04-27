@@ -298,6 +298,15 @@ def _execute_epic_setup(
 
         logger.info("Epic setup phase %s completed successfully", phase_name)
 
+        # Git auto-commit for the completed setup phase
+        from bmad_assist.git import auto_commit_phase
+
+        auto_commit_phase(
+            phase=state.current_phase,
+            story_id=state.current_story or str(state.current_epic),
+            project_path=project_path,
+        )
+
     # All setup phases completed successfully - set to first story phase from config
     first_story_phase = Phase(loop_config.story[0])
     now = datetime.now(UTC).replace(tzinfo=None)
@@ -420,6 +429,15 @@ def _execute_epic_teardown(
             continue
 
         logger.info("Epic teardown phase %s completed successfully", phase_name)
+
+        # Git auto-commit for the completed teardown phase
+        from bmad_assist.git import auto_commit_phase
+
+        auto_commit_phase(
+            phase=state.current_phase,
+            story_id=state.current_story or str(state.current_epic),
+            project_path=project_path,
+        )
 
     logger.info("Epic teardown complete for epic %s", state.current_epic)
     return state, last_result

@@ -307,7 +307,10 @@ def _generate_conventional_message(
         Phase.QA_REMEDIATE,
         Phase.TEA_FRAMEWORK,
         Phase.TEA_CI,
+        Phase.TEA_TEST_DESIGN,
+        Phase.TEA_AUTOMATE,
         Phase.TEA_NFR_ASSESS,
+        Phase.TRACE,
     }
 
     if phase in epic_phases:

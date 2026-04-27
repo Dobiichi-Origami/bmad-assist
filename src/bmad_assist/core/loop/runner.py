@@ -1515,8 +1515,6 @@ def _run_loop_body(
             )
 
             # Git auto-commit for the COMPLETED phase (before advancing)
-            # Only commits if phase is in COMMIT_PHASES (CREATE_STORY, DEV_STORY, CODE_REVIEW_SYNTHESIS, RETROSPECTIVE) # noqa: E501
-            # Validation phases are NOT in COMMIT_PHASES, so their reports are not committed.
             # Lazy import to avoid circular dependency
             from bmad_assist.git import auto_commit_phase
 
