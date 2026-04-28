@@ -58,8 +58,11 @@ providers:
   #   provider: claude
   #   model: opus
   #   enabled: false              # Default: false. Use --twin CLI flag or set to true
-  #   max_retries: 2              # Max RETRY attempts before exhausting
-  #   retry_exhausted_action: halt  # halt | continue
+  #   max_retries: 2              # Max stash_retry cycles before exhausting
+  #   retry_exhausted_action: halt  # halt | continue (applies to both stash_retry and quick_correct)
+  #   retry_mode: stash_retry      # stash_retry | quick_correct | auto
+  #   max_quick_corrections: 1     # Max quick_correct cycles (independent of max_retries)
+  #   retry_mode_threshold_seconds: 120  # Auto mode: duration >= threshold → quick_correct
   #   audit_extract_model: haiku    # Model for self-audit extraction (None = use main model)
   #   timeout_retries: 2            # Max timeout retry attempts for Twin LLM calls (None = no retry)
   #   timeout: 300                  # Timeout in seconds for Twin LLM calls (reflect + audit_extract)
