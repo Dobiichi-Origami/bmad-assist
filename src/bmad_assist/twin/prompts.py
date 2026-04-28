@@ -249,7 +249,7 @@ page_updates:
   - page_name: <name matching (env|pattern|design|guide)-[a-z0-9-]+>
     action: create  # one of: create, update, evolve
     content: |
-      <full page content for create/evolve; for evolve use {{EVIDENCE_TABLE}} placeholder>
+      <full page content for create/evolve; for evolve use {{{{EVIDENCE_TABLE}}}} placeholder>
     append_evidence:
       context: <what was happening>
       result: <what was observed>
@@ -264,7 +264,7 @@ Rules:
 - At most 2 page_updates entries per reflect call.
 - page_name MUST match (env|pattern|design|guide)-[a-z0-9-]+.
 - action MUST be one of: create, update, evolve (no archive).
-- For evolve, use {{EVIDENCE_TABLE}} placeholder where evidence table should appear.
+- For evolve, use {{{{EVIDENCE_TABLE}}}} placeholder where evidence table should appear.
 - Confidence is NOT set by you — it is code-derived from occurrences and sentiment.
 - Sentiment values: positive, negative, neutral, caution.
 """

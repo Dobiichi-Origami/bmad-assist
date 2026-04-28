@@ -585,9 +585,21 @@ def _apply_evolve(name: str, new_content: str, wiki_dir: Path, epic_id: str) -> 
             return
 
     # Preserve evidence table via {{EVIDENCE_TABLE}} placeholder
-    if "{{EVIDENCE_TABLE}}" in new_content:
-        original_evidence = extract_evidence_table(existing_content)
-        new_content = new_content.replace("{{EVIDENCE_TABLE}}", original_evidence)
+    # Also handle single-brace variant {EVIDENCE_TABLE} (LLM may output
+    # either form depending on what it saw in the prompt)
+    placeholder_found = False
+    for variant in ("{{EVIDENCE_TABLE}}", "{EVIDENCE_TABLE}"):
+        if variant in new_content:
+            original_evidence = extract_evidence_table(existing_content)
+            new_content = new_content.replace(variant, original_evidence)
+            placeholder_found = True
+            break
+
+    if not placeholder_found:
+        logger.warning(
+            "EVOLVE %s: no EVIDENCE_TABLE placeholder found in content "
+            "(evidence table may be lost or overwritten)", name,
+        )
 
     # Update frontmatter in the new content
     # First, ensure the new content has frontmatter

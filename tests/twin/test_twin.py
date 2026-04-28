@@ -484,6 +484,32 @@ class TestApplyPageUpdates:
         assert "EPIC-001" in page
         assert "Evolved what" in page
 
+    def test_evolve_preserves_evidence_single_brace(self, wiki_dir: Path) -> None:
+        """EVOLVE replaces {EVIDENCE_TABLE} (single brace) with original evidence table."""
+        content = (
+            "---\ncategory: env\nsentiment: positive\nconfidence: established\n"
+            "occurrences: 2\nlast_updated: EPIC-002\nsource_epics: [EPIC-001, EPIC-002]\nlinks_to: []\n"
+            "---\n\n# Test\n\n## Evidence\n\n"
+            "| Context | Result | Epic |\n|---------|--------|------|\n"
+            "| Setup | Works | EPIC-001 |\n\n## What\nOld what"
+        )
+        write_page(wiki_dir, "env-test", content)
+
+        new_content = (
+            "---\ncategory: env\nsentiment: positive\nconfidence: established\n"
+            "occurrences: 2\nlast_updated: EPIC-002\nsource_epics: [EPIC-001, EPIC-002]\nlinks_to: []\n"
+            "---\n\n# Test\n\n## Evidence\n\n{EVIDENCE_TABLE}\n\n## What\nEvolved what"
+        )
+        updates = [
+            PageUpdate(page_name="env-test", action="evolve", content=new_content)
+        ]
+        apply_page_updates(updates, wiki_dir, "EPIC-002")
+        page = read_page(wiki_dir, "env-test")
+        # Original evidence should be preserved even with single-brace placeholder
+        assert "EPIC-001" in page
+        assert "Evolved what" in page
+        assert "{EVIDENCE_TABLE}" not in page
+
     def test_evolve_safety_check_mismatched_epic(self, wiki_dir: Path) -> None:
         """EVOLVE skips when last_updated != epic_id (manual edits take priority)."""
         content = (
