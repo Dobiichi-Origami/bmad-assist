@@ -7,7 +7,7 @@ import os
 import pytest
 from pydantic import ValidationError
 
-from bmad_assist.twin.config import TwinProviderConfig
+from bmad_assist.twin.config import TwinProviderConfig, resolve_retry_mode
 
 
 class TestTwinProviderConfigDefaults:
@@ -104,6 +104,102 @@ class TestTwinProviderConfigValidation:
             provider="claude", model="opus", audit_extract_model="haiku"
         )
         assert config.audit_extract_model == "haiku"
+
+
+class TestTwinProviderConfigRetryMode:
+    """Verify retry_mode, max_quick_corrections, and retry_mode_threshold_seconds."""
+
+    def test_default_retry_mode(self) -> None:
+        """Default retry_mode is 'stash_retry'."""
+        config = TwinProviderConfig()
+        assert config.retry_mode == "stash_retry"
+
+    def test_default_max_quick_corrections(self) -> None:
+        """Default max_quick_corrections is 1."""
+        config = TwinProviderConfig()
+        assert config.max_quick_corrections == 1
+
+    def test_default_retry_mode_threshold_seconds(self) -> None:
+        """Default retry_mode_threshold_seconds is 120."""
+        config = TwinProviderConfig()
+        assert config.retry_mode_threshold_seconds == 120
+
+    def test_custom_retry_mode_quick_correct(self) -> None:
+        """Custom retry_mode='quick_correct' is accepted."""
+        config = TwinProviderConfig(retry_mode="quick_correct")
+        assert config.retry_mode == "quick_correct"
+
+    def test_custom_retry_mode_auto(self) -> None:
+        """Custom retry_mode='auto' is accepted."""
+        config = TwinProviderConfig(retry_mode="auto")
+        assert config.retry_mode == "auto"
+
+    def test_custom_max_quick_corrections(self) -> None:
+        """Custom max_quick_corrections=3 is accepted."""
+        config = TwinProviderConfig(max_quick_corrections=3)
+        assert config.max_quick_corrections == 3
+
+    def test_custom_retry_mode_threshold_seconds(self) -> None:
+        """Custom retry_mode_threshold_seconds=300 is accepted."""
+        config = TwinProviderConfig(retry_mode_threshold_seconds=300)
+        assert config.retry_mode_threshold_seconds == 300
+
+    def test_invalid_retry_mode_rejected(self) -> None:
+        """retry_mode='unknown' is rejected."""
+        with pytest.raises(ValidationError, match="retry_mode"):
+            TwinProviderConfig(retry_mode="unknown")
+
+    def test_quick_correct_config_combo(self) -> None:
+        """retry_mode='quick_correct' with max_quick_corrections=2."""
+        config = TwinProviderConfig(retry_mode="quick_correct", max_quick_corrections=2)
+        assert config.retry_mode == "quick_correct"
+        assert config.max_quick_corrections == 2
+
+    def test_auto_config_combo(self) -> None:
+        """retry_mode='auto' with custom threshold."""
+        config = TwinProviderConfig(retry_mode="auto", retry_mode_threshold_seconds=300)
+        assert config.retry_mode == "auto"
+        assert config.retry_mode_threshold_seconds == 300
+
+
+class TestResolveRetryMode:
+    """Verify resolve_retry_mode() logic."""
+
+    def test_auto_long_duration_selects_quick_correct(self) -> None:
+        """Auto mode with duration >= threshold selects quick_correct."""
+        config = TwinProviderConfig(retry_mode="auto", retry_mode_threshold_seconds=120)
+        assert resolve_retry_mode(config, 180000, "dev_story") == "quick_correct"
+
+    def test_auto_short_duration_selects_stash_retry(self) -> None:
+        """Auto mode with duration < threshold selects stash_retry."""
+        config = TwinProviderConfig(retry_mode="auto", retry_mode_threshold_seconds=120)
+        assert resolve_retry_mode(config, 45000, "dev_story") == "stash_retry"
+
+    def test_auto_exact_threshold_selects_quick_correct(self) -> None:
+        """Auto mode with duration == threshold selects quick_correct."""
+        config = TwinProviderConfig(retry_mode="auto", retry_mode_threshold_seconds=120)
+        assert resolve_retry_mode(config, 120000, "dev_story") == "quick_correct"
+
+    def test_explicit_stash_retry(self) -> None:
+        """Explicit stash_retry mode ignores duration."""
+        config = TwinProviderConfig(retry_mode="stash_retry")
+        assert resolve_retry_mode(config, 180000, "dev_story") == "stash_retry"
+
+    def test_explicit_quick_correct(self) -> None:
+        """Explicit quick_correct mode ignores duration."""
+        config = TwinProviderConfig(retry_mode="quick_correct")
+        assert resolve_retry_mode(config, 45000, "dev_story") == "quick_correct"
+
+    def test_auto_logs_selection(self, caplog: pytest.LogCaptureFixture) -> None:
+        """Auto mode logs the selection decision."""
+        import logging
+
+        config = TwinProviderConfig(retry_mode="auto", retry_mode_threshold_seconds=120)
+        with caplog.at_level(logging.INFO, logger="bmad_assist.twin.config"):
+            resolve_retry_mode(config, 180000, "dev_story")
+        assert "auto-selected" in caplog.text
+        assert "quick_correct" in caplog.text
+        assert "dev_story" in caplog.text
 
 
 class TestBMADTWINENABLEDEnvironmentOverride:

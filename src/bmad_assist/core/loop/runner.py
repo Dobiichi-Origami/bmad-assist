@@ -1353,87 +1353,166 @@ def _run_loop_body(
                         logger.warning("Twin HALT: %s", twin_result.rationale)
                         return LoopExitReason.GUARDIAN_HALT
                     elif twin_result.decision == "retry":
-                        # RETRY logic: git stash → re-execute with correction compass
-                        retry_count = 0
-                        max_retries = _twin_instance.config.max_retries
+                        # Resolve retry mode and branch accordingly
+                        from bmad_assist.twin.config import resolve_retry_mode
+
+                        resolved_mode = resolve_retry_mode(
+                            _twin_instance.config, duration_ms, phase_name,
+                        )
                         retry_exhausted_action = _twin_instance.config.retry_exhausted_action
                         original_compass = compass
 
-                        while retry_count < max_retries:
-                            # Git stash to restore working directory
-                            try:
-                                from bmad_assist.git import stash_working_changes
+                        if resolved_mode == "stash_retry":
+                            # STASH_RETRY: existing path — git stash + re-execute
+                            retry_count = 0
+                            max_retries = _twin_instance.config.max_retries
 
-                                stash_working_changes(project_path)
-                            except Exception as e:
-                                logger.warning("Git stash failed before RETRY: %s", e)
+                            while retry_count < max_retries:
+                                # Git stash to restore working directory
+                                try:
+                                    from bmad_assist.git import stash_working_changes
 
-                            # Format correction compass
-                            correction = ""
-                            if twin_result.drift_assessment and twin_result.drift_assessment.correction:
-                                correction = twin_result.drift_assessment.correction
+                                    stash_working_changes(project_path)
+                                except Exception as e:
+                                    logger.warning("Git stash failed before RETRY: %s", e)
 
-                            retry_count += 1
-                            correction_compass = f"[RETRY retry={retry_count}] {correction}"
-                            # Append correction to original compass (not replace)
-                            full_compass = (original_compass or "") + "\n" + correction_compass
+                                # Format correction compass
+                                correction = ""
+                                if twin_result.drift_assessment and twin_result.drift_assessment.correction:
+                                    correction = twin_result.drift_assessment.correction
 
-                            logger.info(
-                                "Twin RETRY %d/%d for phase %s: %s",
-                                retry_count, max_retries, phase_name, correction[:100],
-                            )
+                                retry_count += 1
+                                correction_compass = f"[RETRY retry={retry_count}] {correction}"
+                                # Append correction to original compass (not replace)
+                                full_compass = (original_compass or "") + "\n" + correction_compass
 
-                            # Re-execute phase with correction compass
-                            retry_result = execute_phase(state, compass=full_compass)
-
-                            if not retry_result.success:
-                                logger.warning("RETRY phase execution failed: %s", retry_result.error)
-                                break
-
-                            # Reflect on retry result
-                            retry_record = build_execution_record(
-                                phase=phase_name,
-                                mission=mission,
-                                llm_output=retry_result.outputs.get("response", ""),
-                                success=retry_result.success,
-                                duration_ms=retry_result.outputs.get("duration_ms", 0) if isinstance(retry_result.outputs.get("duration_ms", 0), int) else 0,
-                                error=retry_result.error,
-                                phase_outputs=retry_result.outputs,
-                                project_path=project_path,
-                            )
-
-                            retry_twin_result = _twin_instance.reflect(
-                                retry_record, is_retry=True, epic_id=epic_id,
-                            )
-
-                            if retry_twin_result.page_updates:
-                                apply_page_updates(
-                                    retry_twin_result.page_updates,
-                                    _twin_instance.wiki_dir,
-                                    epic_id=epic_id or "",
+                                logger.info(
+                                    "Twin RETRY %d/%d for phase %s: %s",
+                                    retry_count, max_retries, phase_name, correction[:100],
                                 )
 
-                            if retry_twin_result.decision == "continue":
-                                logger.info("Twin RETRY successful after %d attempts", retry_count)
-                                result = retry_result
-                                break
-                            elif retry_twin_result.decision == "halt":
-                                logger.warning("Twin HALT after RETRY: %s", retry_twin_result.rationale)
-                                return LoopExitReason.GUARDIAN_HALT
-                            elif retry_twin_result.decision == "retry":
-                                twin_result = retry_twin_result
-                                if retry_twin_result.drift_assessment and retry_twin_result.drift_assessment.correction:
-                                    correction = retry_twin_result.drift_assessment.correction
-                                continue
+                                # Re-execute phase with correction compass
+                                retry_result = execute_phase(state, compass=full_compass)
+
+                                if not retry_result.success:
+                                    logger.warning("RETRY phase execution failed: %s", retry_result.error)
+                                    break
+
+                                # Reflect on retry result
+                                retry_record = build_execution_record(
+                                    phase=phase_name,
+                                    mission=mission,
+                                    llm_output=retry_result.outputs.get("response", ""),
+                                    success=retry_result.success,
+                                    duration_ms=retry_result.outputs.get("duration_ms", 0) if isinstance(retry_result.outputs.get("duration_ms", 0), int) else 0,
+                                    error=retry_result.error,
+                                    phase_outputs=retry_result.outputs,
+                                    project_path=project_path,
+                                )
+
+                                retry_twin_result = _twin_instance.reflect(
+                                    retry_record, is_retry=True, epic_id=epic_id,
+                                )
+
+                                if retry_twin_result.page_updates:
+                                    apply_page_updates(
+                                        retry_twin_result.page_updates,
+                                        _twin_instance.wiki_dir,
+                                        epic_id=epic_id or "",
+                                    )
+
+                                if retry_twin_result.decision == "continue":
+                                    logger.info("Twin RETRY successful after %d attempts", retry_count)
+                                    result = retry_result
+                                    break
+                                elif retry_twin_result.decision == "halt":
+                                    logger.warning("Twin HALT after RETRY: %s", retry_twin_result.rationale)
+                                    return LoopExitReason.GUARDIAN_HALT
+                                elif retry_twin_result.decision == "retry":
+                                    twin_result = retry_twin_result
+                                    if retry_twin_result.drift_assessment and retry_twin_result.drift_assessment.correction:
+                                        correction = retry_twin_result.drift_assessment.correction
+                                    continue
+                            else:
+                                # Retries exhausted
+                                logger.error(
+                                    "Twin RETRY exhausted (%d/%d): %s",
+                                    retry_count, max_retries, twin_result.rationale,
+                                )
+                                if retry_exhausted_action == "halt":
+                                    return LoopExitReason.GUARDIAN_HALT
+                                # else continue
+
                         else:
-                            # Retries exhausted
-                            logger.error(
-                                "Twin RETRY exhausted (%d/%d): %s",
-                                retry_count, max_retries, twin_result.rationale,
-                            )
-                            if retry_exhausted_action == "halt":
-                                return LoopExitReason.GUARDIAN_HALT
-                            # else continue
+                            # QUICK_CORRECT: re-invoke without git stash
+                            correction_count = 0
+                            max_corrections = _twin_instance.config.max_quick_corrections
+
+                            while correction_count < max_corrections:
+                                # Format correction compass with QUICK-CORRECT prefix
+                                correction = ""
+                                if twin_result.drift_assessment and twin_result.drift_assessment.correction:
+                                    correction = twin_result.drift_assessment.correction
+
+                                correction_count += 1
+                                correction_compass = f"[QUICK-CORRECT {correction_count}/{max_corrections}] {correction}"
+                                # Append correction to original compass (not replace)
+                                full_compass = (original_compass or "") + "\n" + correction_compass
+
+                                logger.info(
+                                    "Twin QUICK-CORRECT %d/%d for phase %s: %s",
+                                    correction_count, max_corrections, phase_name, correction[:100],
+                                )
+
+                                # Re-execute phase with correction compass (NO git stash)
+                                retry_result = execute_phase(state, compass=full_compass)
+
+                                if not retry_result.success:
+                                    logger.warning("QUICK-CORRECT phase execution failed: %s", retry_result.error)
+                                    break
+
+                                # Reflect on correction result
+                                retry_record = build_execution_record(
+                                    phase=phase_name,
+                                    mission=mission,
+                                    llm_output=retry_result.outputs.get("response", ""),
+                                    success=retry_result.success,
+                                    duration_ms=retry_result.outputs.get("duration_ms", 0) if isinstance(retry_result.outputs.get("duration_ms", 0), int) else 0,
+                                    error=retry_result.error,
+                                    phase_outputs=retry_result.outputs,
+                                    project_path=project_path,
+                                )
+
+                                retry_twin_result = _twin_instance.reflect(
+                                    retry_record, is_retry=True, epic_id=epic_id,
+                                )
+
+                                if retry_twin_result.page_updates:
+                                    apply_page_updates(
+                                        retry_twin_result.page_updates,
+                                        _twin_instance.wiki_dir,
+                                        epic_id=epic_id or "",
+                                    )
+
+                                if retry_twin_result.decision == "continue":
+                                    logger.info("Twin QUICK-CORRECT successful after %d attempts", correction_count)
+                                    result = retry_result
+                                    break
+                                elif retry_twin_result.decision == "halt":
+                                    logger.warning("Twin HALT after QUICK-CORRECT: %s", retry_twin_result.rationale)
+                                    return LoopExitReason.GUARDIAN_HALT
+                                elif retry_twin_result.decision == "retry":
+                                    twin_result = retry_twin_result
+                                    continue
+                            else:
+                                # Quick corrections exhausted
+                                logger.error(
+                                    "Twin QUICK-CORRECT exhausted (%d/%d): %s",
+                                    correction_count, max_corrections, twin_result.rationale,
+                                )
+                                if retry_exhausted_action == "halt":
+                                    return LoopExitReason.GUARDIAN_HALT
+                                # else continue
                 except Exception as e:
                     logger.warning("Twin reflect failed, proceeding: %s: %s", type(e).__name__, e)
 

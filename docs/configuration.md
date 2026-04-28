@@ -36,6 +36,17 @@ providers:
       model: sonnet
       model_name: glm-4.7           # Display name in logs/reports
       settings: ~/.claude/glm.json  # Custom model settings file
+
+  # Digital Twin - reflect/guide after phase execution
+  twin:
+    provider: claude-subprocess
+    model: opus
+    enabled: true
+    max_retries: 2                  # Max stash_retry cycles
+    retry_exhausted_action: halt    # "halt" or "continue" when retries exhausted
+    retry_mode: auto                # "stash_retry", "quick_correct", or "auto"
+    max_quick_corrections: 1        # Max quick_correct cycles (independent of max_retries)
+    retry_mode_threshold_seconds: 120  # Auto mode: duration >= threshold → quick_correct
 ```
 
 ### Available Providers
@@ -60,6 +71,38 @@ providers:
 | `model_name` | No | Display name in logs/benchmarks |
 | `settings` | No | Path to settings file (claude-subprocess) |
 | `fallbacks` | No | List of fallback provider configs (see below) |
+
+### Twin Provider Options
+
+The Digital Twin provides independent review and guidance during phase execution. When enabled, it reflects after each successful phase and can guide (pre-phase) or retry (post-phase correction).
+
+| Option | Default | Description |
+|--------|---------|-------------|
+| `provider` | `claude` | Provider identifier for Twin LLM calls |
+| `model` | `opus` | Model identifier for Twin LLM calls |
+| `enabled` | `false` | Whether the Digital Twin is active |
+| `max_retries` | `2` | Max stash_retry cycles before exhausting |
+| `retry_exhausted_action` | `halt` | `"halt"` stops the loop; `"continue"` proceeds to next phase |
+| `timeout_retries` | `2` | Max timeout retry attempts for Twin LLM calls. `null` disables retry |
+| `retry_mode` | `stash_retry` | How the runner handles a retry decision (see below) |
+| `max_quick_corrections` | `1` | Max quick correction cycles (independent of `max_retries`) |
+| `retry_mode_threshold_seconds` | `120` | Min phase duration (seconds) above which auto mode selects quick_correct |
+
+### Twin Retry Modes
+
+The `retry_mode` setting controls how the runner handles a `retry` decision from the Twin:
+
+| Mode | Behavior |
+|------|----------|
+| `stash_retry` | Git stash + full phase re-execution from scratch (default, existing behavior) |
+| `quick_correct` | Re-invoke phase with correction compass **without** git stash — the model corrects in-place |
+| `auto` | Dynamically select based on phase execution duration: long-running phases (>= threshold) get `quick_correct`, short phases get `stash_retry` |
+
+When `retry_mode="auto"`, the runner compares the phase's `duration_ms` against `retry_mode_threshold_seconds`:
+- `duration_ms / 1000 >= threshold` → `quick_correct` (retry cost is high, preserve work)
+- `duration_ms / 1000 < threshold` → `stash_retry` (clean redo is cheap and safer)
+
+Quick correction uses a `[QUICK-CORRECT n/N]` compass prefix instead of `[RETRY retry=N]`, signaling the model to fix in-place rather than start over. When quick corrections are exhausted, the system follows `retry_exhausted_action` — it does **not** auto-escalate to `stash_retry`.
 
 ### Provider Fallback Chains
 

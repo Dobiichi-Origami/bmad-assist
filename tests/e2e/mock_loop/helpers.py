@@ -147,6 +147,7 @@ def create_e2e_config(
     qa_enabled: bool = False,
     tea_enabled: bool = False,
     twin_enabled: bool = False,
+    twin_overrides: dict[str, Any] | None = None,
 ) -> Config:
     """Create a minimal Config suitable for mock E2E tests.
 
@@ -175,11 +176,14 @@ def create_e2e_config(
         }
 
     if twin_enabled:
-        config_data["providers"]["twin"] = {
+        twin_data: dict[str, Any] = {
             "provider": "claude",
             "model": "mock",
             "enabled": True,
         }
+        if twin_overrides:
+            twin_data.update(twin_overrides)
+        config_data["providers"]["twin"] = twin_data
 
     _reset_config()
     return load_config(config_data)
