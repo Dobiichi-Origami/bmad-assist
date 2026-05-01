@@ -33,6 +33,7 @@ from bmad_assist.twin.wiki import (
     prepare_llm_output,
     read_page,
     rebuild_index,
+    sanitize_evidence_placeholder,
     update_frontmatter,
     validate_page_name,
     write_page,
@@ -502,7 +503,7 @@ def _apply_single_update(
     elif update.action == "update":
         _apply_update(name, update, wiki_dir, epic_id)
     elif update.action == "evolve":
-        _apply_evolve(name, update.content, wiki_dir, epic_id)
+        _apply_evolve(name, update, wiki_dir, epic_id)
 
 
 def _apply_create(name: str, content: str, wiki_dir: Path, epic_id: str) -> None:
@@ -513,6 +514,9 @@ def _apply_create(name: str, content: str, wiki_dir: Path, epic_id: str) -> None
             name,
         )
         return
+
+    # Sanitize: strip any EVIDENCE_TABLE placeholders, normalize heading
+    content = sanitize_evidence_placeholder(content, action="create")
 
     # Ensure frontmatter includes source_epics
     fm = parse_frontmatter(content)
@@ -546,6 +550,10 @@ def _apply_update(name: str, update: PageUpdate, wiki_dir: Path, epic_id: str) -
     if content is None:
         return
 
+    # Extract evidence before modifications so the final fallback in
+    # sanitize_evidence_placeholder can preserve it if heading is unreachable
+    existing_evidence = extract_evidence_table(content)
+
     # Append evidence row if provided
     if update.append_evidence:
         update.append_evidence["epic"] = epic_id
@@ -554,6 +562,10 @@ def _apply_update(name: str, update: PageUpdate, wiki_dir: Path, epic_id: str) -
     # Apply section patches if provided
     if update.section_patches:
         content = apply_section_patches(content, update.section_patches)
+        # Sanitize: strip placeholders + heading normalization + final fallback
+        content = sanitize_evidence_placeholder(
+            content, action="update", original_evidence=existing_evidence,
+        )
 
     # Update frontmatter (increment occurrences, re-derive confidence, track source_epics)
     content = update_frontmatter(content, epic_id)
@@ -562,7 +574,7 @@ def _apply_update(name: str, update: PageUpdate, wiki_dir: Path, epic_id: str) -
     logger.info("Updated wiki page: %s", name)
 
 
-def _apply_evolve(name: str, new_content: str, wiki_dir: Path, epic_id: str) -> None:
+def _apply_evolve(name: str, update: PageUpdate, wiki_dir: Path, epic_id: str) -> None:
     """EVOLVE: replace content with {{EVIDENCE_TABLE}} preservation."""
     if not page_exists(wiki_dir, name):
         logger.warning("Page '%s' does not exist for EVOLVE — skipping", name)
@@ -584,22 +596,18 @@ def _apply_evolve(name: str, new_content: str, wiki_dir: Path, epic_id: str) -> 
             )
             return
 
-    # Preserve evidence table via {{EVIDENCE_TABLE}} placeholder
-    # Also handle single-brace variant {EVIDENCE_TABLE} (LLM may output
-    # either form depending on what it saw in the prompt)
-    placeholder_found = False
-    for variant in ("{{EVIDENCE_TABLE}}", "{EVIDENCE_TABLE}"):
-        if variant in new_content:
-            original_evidence = extract_evidence_table(existing_content)
-            new_content = new_content.replace(variant, original_evidence)
-            placeholder_found = True
-            break
+    new_content = update.content
 
-    if not placeholder_found:
-        logger.warning(
-            "EVOLVE %s: no EVIDENCE_TABLE placeholder found in content "
-            "(evidence table may be lost or overwritten)", name,
-        )
+    # Centralized placeholder handling + heading normalization
+    original_evidence = extract_evidence_table(existing_content)
+    new_content = sanitize_evidence_placeholder(
+        new_content, action="evolve", original_evidence=original_evidence,
+    )
+
+    # Apply append_evidence if provided
+    if update.append_evidence:
+        update.append_evidence["epic"] = epic_id
+        new_content = append_evidence_row(new_content, update.append_evidence)
 
     # Update frontmatter in the new content
     # First, ensure the new content has frontmatter

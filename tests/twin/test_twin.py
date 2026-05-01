@@ -579,6 +579,223 @@ class TestApplyPageUpdates:
         apply_page_updates([], wiki_dir, "EPIC-001")
         # No crash, just rebuilds INDEX (empty)
 
+    # -- Evidence placeholder defensive handling --
+
+    def test_create_with_placeholder_stripped(self, wiki_dir: Path) -> None:
+        """CREATE with EVIDENCE_TABLE placeholder: placeholder stripped, no residue on disk."""
+        content = (
+            "---\ncategory: env\nsentiment: positive\nconfidence: tentative\n"
+            "occurrences: 0\nlast_updated: \"\"\nsource_epics: []\nlinks_to: []\n"
+            "---\n\n# Test\n\n## Evidence\n\n{{EVIDENCE_TABLE}}\n\n## What\nDesc"
+        )
+        updates = [PageUpdate(page_name="env-test", action="create", content=content)]
+        apply_page_updates(updates, wiki_dir, "EPIC-001")
+        page = read_page(wiki_dir, "env-test")
+        assert page is not None
+        assert "{{EVIDENCE_TABLE}}" not in page
+        assert "{EVIDENCE_TABLE}" not in page
+
+    def test_evolve_without_placeholder_preserves_evidence(self, wiki_dir: Path) -> None:
+        """EVOLVE without placeholder: original evidence is auto-preserved."""
+        content = (
+            "---\ncategory: env\nsentiment: positive\nconfidence: established\n"
+            "occurrences: 2\nlast_updated: EPIC-002\nsource_epics: [EPIC-001, EPIC-002]\nlinks_to: []\n"
+            "---\n\n# Test\n\n## Evidence\n\n"
+            "| Context | Result | Epic |\n|---------|--------|------|\n"
+            "| Setup | Works | EPIC-001 |\n\n## What\nOld what"
+        )
+        write_page(wiki_dir, "env-test", content)
+
+        new_content = (
+            "---\ncategory: env\nsentiment: positive\nconfidence: established\n"
+            "occurrences: 2\nlast_updated: EPIC-002\nsource_epics: [EPIC-001, EPIC-002]\nlinks_to: []\n"
+            "---\n\n# Test\n\n## What\nEvolved what"
+        )
+        updates = [
+            PageUpdate(page_name="env-test", action="evolve", content=new_content)
+        ]
+        apply_page_updates(updates, wiki_dir, "EPIC-002")
+        page = read_page(wiki_dir, "env-test")
+        assert page is not None
+        assert "EPIC-001" in page
+        assert "Evolved what" in page
+
+    def test_evolve_with_append_evidence(self, wiki_dir: Path) -> None:
+        """EVOLVE with append_evidence: evidence row is appended."""
+        content = (
+            "---\ncategory: env\nsentiment: positive\nconfidence: established\n"
+            "occurrences: 2\nlast_updated: EPIC-003\nsource_epics: [EPIC-001, EPIC-002]\nlinks_to: []\n"
+            "---\n\n# Test\n\n## Evidence\n\n"
+            "| Context | Result | Epic |\n|---------|--------|------|\n"
+            "| Setup | Works | EPIC-001 |\n\n## What\nOld what"
+        )
+        write_page(wiki_dir, "env-test", content)
+
+        new_content = (
+            "---\ncategory: env\nsentiment: positive\nconfidence: established\n"
+            "occurrences: 2\nlast_updated: EPIC-003\nsource_epics: [EPIC-001, EPIC-002]\nlinks_to: []\n"
+            "---\n\n# Test\n\n## Evidence\n\n{{EVIDENCE_TABLE}}\n\n## What\nEvolved what"
+        )
+        updates = [
+            PageUpdate(
+                page_name="env-test",
+                action="evolve",
+                content=new_content,
+                append_evidence={"context": "New ctx", "result": "New res"},
+            )
+        ]
+        apply_page_updates(updates, wiki_dir, "EPIC-003")
+        page = read_page(wiki_dir, "env-test")
+        assert page is not None
+        assert "EPIC-001" in page  # original evidence preserved
+        assert "EPIC-003" in page  # appended evidence
+        assert "Evolved what" in page
+
+    def test_create_with_wrong_evidence_heading(self, wiki_dir: Path) -> None:
+        """CREATE with misspelled evidence heading: heading is normalized."""
+        content = (
+            "---\ncategory: env\nsentiment: positive\nconfidence: tentative\n"
+            "occurrences: 0\nlast_updated: \"\"\nsource_epics: []\nlinks_to: []\n"
+            "---\n\n# Test\n\n## Evidence Table\n\n| Context | Result |\n|---------|--------|\n\n## What\nDesc"
+        )
+        updates = [PageUpdate(page_name="env-test", action="create", content=content)]
+        apply_page_updates(updates, wiki_dir, "EPIC-001")
+        page = read_page(wiki_dir, "env-test")
+        assert page is not None
+        assert "## Evidence\n" in page
+        assert "Evidence Table" not in page
+
+    # -- Edge-case integration tests --
+
+    def test_evolve_placeholder_original_no_evidence(self, wiki_dir: Path) -> None:
+        """B1: EVOLVE with placeholder but original page has no Evidence section.
+        Placeholder replaced with empty, empty section cleaned up."""
+        content = (
+            "---\ncategory: env\nsentiment: positive\nconfidence: established\n"
+            "occurrences: 2\nlast_updated: EPIC-001\nsource_epics: [EPIC-001]\nlinks_to: []\n"
+            "---\n\n# Test\n\n## What\nOld what"
+        )
+        write_page(wiki_dir, "env-test", content)
+
+        new_content = (
+            "---\ncategory: env\nsentiment: positive\nconfidence: established\n"
+            "occurrences: 2\nlast_updated: EPIC-001\nsource_epics: [EPIC-001]\nlinks_to: []\n"
+            "---\n\n# Test\n\n## Evidence\n\n{{EVIDENCE_TABLE}}\n\n## What\nEvolved"
+        )
+        updates = [
+            PageUpdate(page_name="env-test", action="evolve", content=new_content)
+        ]
+        apply_page_updates(updates, wiki_dir, "EPIC-001")
+        page = read_page(wiki_dir, "env-test")
+        assert page is not None
+        assert "{{EVIDENCE_TABLE}}" not in page
+        # Empty evidence section should be removed
+        assert "## What" in page
+        assert "Evolved" in page
+
+    def test_update_section_patches_with_placeholder(self, wiki_dir: Path) -> None:
+        """UPDATE with section_patches containing placeholder: placeholder stripped."""
+        content = (
+            "---\ncategory: env\nsentiment: positive\nconfidence: tentative\n"
+            "occurrences: 1\nlast_updated: EPIC-001\nsource_epics: [EPIC-001]\nlinks_to: []\n"
+            "---\n\n# Test\n\n## What\nOld what"
+        )
+        write_page(wiki_dir, "env-test", content)
+
+        updates = [
+            PageUpdate(
+                page_name="env-test",
+                action="update",
+                section_patches={"What": "New what with {{EVIDENCE_TABLE}} embedded"},
+            )
+        ]
+        apply_page_updates(updates, wiki_dir, "EPIC-002")
+        page = read_page(wiki_dir, "env-test")
+        assert page is not None
+        assert "{{EVIDENCE_TABLE}}" not in page
+        assert "New what with" in page
+        assert "embedded" in page
+
+    def test_create_placeholder_preserves_real_content(self, wiki_dir: Path) -> None:
+        """CREATE with both placeholder and real evidence content: placeholder stripped,
+        real content preserved."""
+        content = (
+            "---\ncategory: env\nsentiment: positive\nconfidence: tentative\n"
+            "occurrences: 0\nlast_updated: \"\"\nsource_epics: []\nlinks_to: []\n"
+            "---\n\n# Test\n\n## Evidence\n\n"
+            "| Context | Result |\n|---------|--------|\n| Test | OK |\n\n"
+            "{{EVIDENCE_TABLE}}\n\n## What\nDesc"
+        )
+        updates = [PageUpdate(page_name="env-test", action="create", content=content)]
+        apply_page_updates(updates, wiki_dir, "EPIC-001")
+        page = read_page(wiki_dir, "env-test")
+        assert page is not None
+        assert "{{EVIDENCE_TABLE}}" not in page
+        assert "Test | OK" in page
+
+    def test_evolve_double_space_heading_evidence_survives(self, wiki_dir: Path) -> None:
+        """LLM outputs '##  Evidence' (double space) in EVOLVE content.
+        After normalization + placeholder replacement, evidence is findable
+        by extract_evidence_table for subsequent operations."""
+        from bmad_assist.twin.wiki import extract_evidence_table
+
+        content = (
+            "---\ncategory: env\nsentiment: positive\nconfidence: established\n"
+            "occurrences: 2\nlast_updated: EPIC-001\nsource_epics: [EPIC-001]\nlinks_to: []\n"
+            "---\n\n# Test\n\n## Evidence\n\n"
+            "| Context | Result | Epic |\n|---------|--------|------|\n"
+            "| Setup | Works | EPIC-001 |\n\n## What\nOld what"
+        )
+        write_page(wiki_dir, "env-test", content)
+
+        new_content = (
+            "---\ncategory: env\nsentiment: positive\nconfidence: established\n"
+            "occurrences: 2\nlast_updated: EPIC-001\nsource_epics: [EPIC-001]\nlinks_to: []\n"
+            "---\n\n# Test\n\n##  Evidence\n\n{{EVIDENCE_TABLE}}\n\n## What\nEvolved"
+        )
+        updates = [
+            PageUpdate(page_name="env-test", action="evolve", content=new_content)
+        ]
+        apply_page_updates(updates, wiki_dir, "EPIC-001")
+        page = read_page(wiki_dir, "env-test")
+        assert page is not None
+        # Heading must be normalized
+        assert "##  Evidence" not in page
+        # Evidence must be findable by extract_evidence_table
+        extracted = extract_evidence_table(page)
+        assert "EPIC-001" in extracted
+
+    def test_update_section_patches_preserves_evidence_via_fallback(self, wiki_dir: Path) -> None:
+        """UPDATE with section_patches on a page with ## Evidence: existing evidence
+        is extracted before patching and passed to sanitize_evidence_placeholder
+        as original_evidence for the final fallback."""
+        from bmad_assist.twin.wiki import extract_evidence_table
+
+        content = (
+            "---\ncategory: env\nsentiment: positive\nconfidence: tentative\n"
+            "occurrences: 1\nlast_updated: EPIC-001\nsource_epics: [EPIC-001]\nlinks_to: []\n"
+            "---\n\n# Test\n\n## Evidence\n\n"
+            "| Context | Result | Epic |\n|---------|--------|------|\n"
+            "| Setup | Works | EPIC-001 |\n\n## What\nOld what"
+        )
+        write_page(wiki_dir, "env-test", content)
+
+        # Section patch replaces What section — no heading issues here
+        updates = [
+            PageUpdate(
+                page_name="env-test",
+                action="update",
+                section_patches={"What": "New what"},
+            )
+        ]
+        apply_page_updates(updates, wiki_dir, "EPIC-002")
+        page = read_page(wiki_dir, "env-test")
+        assert page is not None
+        assert "New what" in page
+        # Evidence should still be reachable
+        extracted = extract_evidence_table(page)
+        assert "EPIC-001" in extracted
+
 
 # ---------------------------------------------------------------------------
 # Twin._extract_self_audit_llm

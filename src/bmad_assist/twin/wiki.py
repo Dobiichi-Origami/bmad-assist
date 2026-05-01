@@ -8,6 +8,7 @@ YAML tolerance, smart truncation, and confidence derivation.
 import logging
 import re
 from pathlib import Path
+from typing import Literal
 
 import yaml
 
@@ -33,6 +34,7 @@ __all__ = [
     "fix_content_block_scalars",
     "prepare_llm_output",
     "derive_confidence",
+    "sanitize_evidence_placeholder",
 ]
 
 
@@ -600,3 +602,344 @@ def derive_confidence(occurrences: int, sentiment: str) -> str:
     if sentiment == "negative":
         return "established"
     return "definitive"
+
+
+# ---------------------------------------------------------------------------
+# Evidence placeholder sanitization
+# ---------------------------------------------------------------------------
+
+# Placeholder variants the LLM might output
+_PLACEHOLDER_VARIANTS = ("{{EVIDENCE_TABLE}}", "{EVIDENCE_TABLE}")
+
+# Heading variants that should be normalized to ## Evidence
+# (regex_pattern, description_for_warning)
+# Order matters: specific patterns first, then catch-all
+_EVIDENCE_HEADING_VARIANTS = [
+    (r"^#{1,4}\s+Evidence\s+Table\s*$", "## Evidence Table"),
+    (r"^#{1,4}\s+Evidences\s*$", "## Evidences"),
+    (r"^#{1,6}\s+evidence\s*$", "non-standard Evidence heading"),
+]
+
+
+def _normalize_heading_by_placeholder(content: str) -> str:
+    """Find the heading governing a placeholder and rename it to ## Evidence.
+
+    If ``{{EVIDENCE_TABLE}}`` or ``{EVIDENCE_TABLE}`` appears in the content,
+    walks backwards from the placeholder line to find the nearest markdown
+    heading (any level) and normalizes it to ``## Evidence``.
+
+    This is the most reliable normalization strategy because the placeholder
+    itself tells us exactly where the Evidence section is — regardless of
+    heading name, language, or level.
+
+    Returns content unchanged if no placeholder is found or the heading
+    is already ``## Evidence``.
+    """
+    lines = content.split("\n")
+    placeholder_line = None
+
+    for i, line in enumerate(lines):
+        for variant in _PLACEHOLDER_VARIANTS:
+            if variant in line:
+                placeholder_line = i
+                break
+        if placeholder_line is not None:
+            break
+
+    if placeholder_line is None:
+        return content
+
+    # Walk backwards to find the nearest heading
+    for j in range(placeholder_line - 1, -1, -1):
+        stripped = lines[j].strip()
+        if stripped.startswith("#"):
+            if stripped == "## Evidence":
+                return content  # Already correct
+            logger.warning(
+                "Normalizing evidence heading by placeholder anchor: "
+                "'%s' → '## Evidence'",
+                stripped,
+            )
+            lines[j] = "## Evidence"
+            return "\n".join(lines)
+
+    # No heading found above placeholder
+    logger.warning(
+        "EVIDENCE_TABLE placeholder found but no heading above it; "
+        "cannot normalize heading"
+    )
+    return content
+
+
+def _normalize_evidence_heading(content: str) -> str:
+    """Fix common misspellings/level errors of ## Evidence heading.
+
+    Two strategies, in priority order:
+
+    1. **Regex patterns**: catch known English variants (wrong case, wrong
+       level, extra spacing, misspellings like "Evidence Table").
+    2. **Table-anchored inference**: if a ``##`` heading is followed by a
+       markdown table row (within 3 lines), treat it as Evidence.
+       Catches non-English headings like ``## 证据`` when a table is present.
+
+    For the EVOLVE action with a ``{{EVIDENCE_TABLE}}`` placeholder, prefer
+    ``_normalize_heading_by_placeholder()`` which is more reliable.
+    """
+    lines = content.split("\n")
+    result = []
+    changed = False
+
+    for i, line in enumerate(lines):
+        stripped = line.strip()
+        # Skip the correct form
+        if stripped == "## Evidence":
+            result.append(line)
+            continue
+        # Try known variant patterns first
+        matched = False
+        for pattern, description in _EVIDENCE_HEADING_VARIANTS:
+            if re.match(pattern, stripped, re.IGNORECASE):
+                logger.warning(
+                    "Normalizing evidence heading: '%s' → '## Evidence'",
+                    description,
+                )
+                result.append("## Evidence")
+                changed = True
+                matched = True
+                break
+        if matched:
+            continue
+
+        # Table-anchored inference: if this ## heading is followed by a
+        # markdown table row (within 3 lines), treat it as Evidence.
+        if stripped.startswith("## ") and not stripped.startswith("## Evidence"):
+            if _next_line_is_table(lines, i):
+                logger.warning(
+                    "Normalizing evidence heading by table-anchored inference: "
+                    "'%s' → '## Evidence'",
+                    stripped,
+                )
+                result.append("## Evidence")
+                changed = True
+                continue
+
+        result.append(line)
+
+    return "\n".join(result) if changed else content
+
+
+def _next_line_is_table(lines: list[str], heading_idx: int) -> bool:
+    """Check if the heading at heading_idx is followed by a markdown table row.
+
+    Looks ahead up to 3 lines (skipping blank lines) for a line starting
+    with | that looks like a table header or separator.
+    """
+    blanks = 0
+    for j in range(heading_idx + 1, min(heading_idx + 4, len(lines))):
+        stripped = lines[j].strip()
+        if stripped == "":
+            blanks += 1
+            if blanks > 1:
+                return False
+            continue
+        # Table header: | Col1 | Col2 | or separator: |---|---|
+        if stripped.startswith("|") and stripped.endswith("|") and stripped.count("|") >= 3:
+            return True
+        return False
+    return False
+
+
+def _remove_empty_evidence_section(content: str) -> str:
+    """Remove ## Evidence section if it contains only whitespace until the
+    next ## heading or end of content.
+
+    This cleans up after placeholder replacement with empty evidence.
+    """
+    lines = content.split("\n")
+    result = []
+    in_evidence = False
+    evidence_only_whitespace = True
+    evidence_result_start = -1  # index in result where ## Evidence was added
+
+    for line in lines:
+        stripped = line.strip()
+
+        if stripped == "## Evidence":
+            in_evidence = True
+            evidence_only_whitespace = True
+            evidence_result_start = len(result)
+            result.append(line)
+            continue
+
+        if in_evidence:
+            if stripped.startswith("## "):
+                # Next section — end of evidence section
+                if evidence_only_whitespace:
+                    # Remove the entire empty evidence section from result
+                    del result[evidence_result_start:]
+                    # Trim trailing blank lines before the next heading
+                    while result and result[-1].strip() == "":
+                        result.pop()
+                in_evidence = False
+                result.append(line)
+            elif stripped == "":
+                result.append(line)
+            else:
+                evidence_only_whitespace = False
+                result.append(line)
+        else:
+            result.append(line)
+
+    # Handle case where evidence section is at end of content
+    if in_evidence and evidence_only_whitespace:
+        # Remove the entire empty evidence section
+        del result[evidence_result_start:]
+        # Trim trailing blank lines
+        while result and result[-1].strip() == "":
+            result.pop()
+
+    return "\n".join(result)
+
+
+def _prepend_evidence_section(content: str, evidence: str) -> str:
+    """Insert ## Evidence section before the first ## heading.
+
+    Insertion happens after frontmatter and page title (# Title) if present,
+    but before the first ## heading.
+    """
+    lines = content.split("\n")
+    insert_idx = None
+
+    # Find the first ## heading
+    for i, line in enumerate(lines):
+        if line.strip().startswith("## "):
+            insert_idx = i
+            break
+
+    evidence_section = f"## Evidence\n\n{evidence}"
+
+    if insert_idx is not None:
+        # Insert before the first ## heading
+        result = lines[:insert_idx] + [evidence_section, ""] + lines[insert_idx:]
+    else:
+        # No ## heading found — append at end
+        result = lines + ["", evidence_section]
+
+    return "\n".join(result)
+
+
+def sanitize_evidence_placeholder(
+    content: str,
+    action: Literal["create", "update", "evolve"],
+    original_evidence: str = "",
+) -> str:
+    """Sanitize EVIDENCE_TABLE placeholders and normalize evidence headings.
+
+    Centralized handling for all action types (CREATE/UPDATE/EVOLVE):
+
+    - Step 1: Normalize ## Evidence heading variants
+    - Step 2: Handle placeholders by action type
+    - Step 3: Post-validation warnings
+    - Step 4: Final fallback — force-append evidence at end if still unreachable
+
+    Args:
+        content: The wiki page content to sanitize.
+        action: The page update action type.
+        original_evidence: The original evidence table content
+            (for EVOLVE: from existing page; for UPDATE: from page before patches).
+
+    Returns:
+        Sanitized content with placeholders resolved.
+    """
+    # Step 1: Normalize heading — placeholder-anchored first, then regex + table-anchored
+    content = _normalize_heading_by_placeholder(content)
+    content = _normalize_evidence_heading(content)
+
+    # Step 2: Handle placeholders by action type
+    if action in ("create", "update"):
+        # Strip all placeholder variants
+        placeholder_found = False
+        for variant in _PLACEHOLDER_VARIANTS:
+            if variant in content:
+                content = content.replace(variant, "")
+                placeholder_found = True
+        if placeholder_found:
+            logger.warning(
+                "Removed EVIDENCE_TABLE placeholder from %s action "
+                "(placeholder should only appear in evolve)",
+                action,
+            )
+            # Clean up empty ## Evidence heading left after removal
+            content = _remove_empty_evidence_section(content)
+
+    elif action == "evolve":
+        # Replace placeholders with original evidence
+        placeholder_found = False
+        for variant in _PLACEHOLDER_VARIANTS:
+            if variant in content:
+                content = content.replace(variant, original_evidence)
+                placeholder_found = True
+
+        if placeholder_found:
+            # If replacement left an empty evidence section, clean it up
+            if not original_evidence.strip():
+                content = _remove_empty_evidence_section(content)
+        else:
+            # No placeholder found — auto-prepend evidence if non-empty
+            if original_evidence.strip():
+                logger.warning(
+                    "EVOLVE: no EVIDENCE_TABLE placeholder found; "
+                    "auto-prepending original evidence section",
+                )
+                content = _prepend_evidence_section(content, original_evidence)
+            # else: no placeholder and no original evidence — nothing to do
+
+    # Step 3: Post-validation — warn if evidence data is unreachable
+    if action in ("create", "evolve"):
+        _warn_unreachable_evidence(content)
+
+    # Step 4: Final fallback — force-append evidence at end if still unreachable
+    # All normalization and placeholder handling above has run, but if
+    # extract_evidence_table() still can't find the section and we have
+    # original evidence to preserve, append a ## Evidence section at the
+    # very end of the document. This is the absolute last resort.
+    if action in ("update", "evolve") and original_evidence.strip():
+        if not extract_evidence_table(content).strip():
+            logger.warning(
+                "Final fallback: all evidence normalization mechanisms failed; "
+                "force-appending ## Evidence section at end of document",
+            )
+            content = content.rstrip("\n") + "\n\n## Evidence\n\n" + original_evidence
+
+    return content
+
+
+# Regex to detect lines that look like evidence table data but aren't under
+# a reachable ## Evidence heading. Used for post-validation warning only.
+_EVIDENCE_TABLE_ROW_RE = re.compile(r"^\|.*\|.*\|$")
+
+
+def _warn_unreachable_evidence(content: str) -> None:
+    """Warn if content has markdown table rows that look like evidence data
+    but extract_evidence_table() cannot find them.
+
+    This catches heading variants that _normalize_evidence_heading missed
+    (e.g., ## 证据, ##Evidence) — cases where the LLM output is so far
+    from standard that regex-based correction isn't appropriate.
+    """
+    extracted = extract_evidence_table(content)
+    if extracted.strip():
+        return  # Evidence section is reachable — no problem
+
+    # Check if there are table rows outside a reachable Evidence section
+    has_table_rows = any(
+        _EVIDENCE_TABLE_ROW_RE.match(line.strip()) and line.strip().count("|") >= 3
+        for line in content.split("\n")
+    )
+    if has_table_rows:
+        logger.warning(
+            "Content has markdown table rows but no reachable ## Evidence section. "
+            "The heading may be misspelled or non-standard (e.g., non-English). "
+            "Evidence data is preserved in the file but programmatic access "
+            "(append_evidence_row, extract_evidence_table) will not work.",
+        )
